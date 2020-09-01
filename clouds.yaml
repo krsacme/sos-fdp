@@ -9,9 +9,7 @@
 clouds:
   openstack:
     auth:
-      auth_url: http://192.168.122.103:5000
       username: "admin"
-      project_id: 76fa14052f184706a0a02268dd5c6b50
       project_name: "admin"
       user_domain_name: "Default"
     region_name: "regionOne"
