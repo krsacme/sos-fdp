@@ -3,18 +3,14 @@
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 ARTIFACTS_DIR="$PROJECT_DIR/build-artifacts"
-BUILD_LOG="$BUILD_DIR/.openshift_install.log"
-export OS_CLOUD=openstack
-
 export KUBECONFIG="$BUILD_DIR/auth/kubeconfig"
 
-declare -A manifest_vars
+# Fill in default of openstack if not set
+export OS_CLOUD=${OS_CLOUD:-openstack}
 
-WORKER_SDN_IP_OFFSET="70"
-WORKER_SRIOV_IP_OFFSET="10"
-INGRESS_FIP="192.168.122.151"
-
-set -x
+WORKER_SDN_IP_OFFSET=${WORKER_SDN_IP_OFFSET:-"70"}
+WORKER_SRIOV_IP_OFFSET=${WORKER_SRIOV_IP_OFFSET:-"10"}
+INGRESS_FIP=${INGRESS_FIP:-"192.168.122.151"}
 
 usage() {
     local out_dir="$1"
@@ -23,37 +19,41 @@ usage() {
     cat <<-EOM
     Deploy/Destroy/Update an OpenShift on OpenStack cluster
     Usage:
-        $prog [-h] [-m manfifest_dir]  deploy|destroy
-            deploy [cluster|workers]   -- Deploy cluster or worker nodes.  Run for initial deploy. 
-            destroy [cluster|workers]  -- Destroy workers or all nodes in the cluster. (destroy cluster first destroys worker nodes)
+        $prog [-h] [-d] [-v] [-m manfifest_dir]  deploy|destroy
+            deploy [cluster|workers index]   -- Deploy cluster or worker nodes.  Run for initial deploy. 
+            destroy [cluster|workers [index]]  -- Destroy workers or all nodes in the cluster. (destroy cluster first destroys worker nodes)
+            prep-osp  -- Create all resources needed to deploy (called by deploy cluster as well)
+            patch-ocp -- After a successful deployment, scale to one node
+            prep-ocp  -- Get OCP ready for adding worker nodes (also called by deploy workers index)
     Options
-        -m cluster_dir -- Location of working dir for cluster creation.
-            Requires: install-config.yaml, bootstrap.yaml, master-0.yaml, [masters/workers...]
-            Defaults to $PROJECT_DIR/cluster/
+            You really have no other options :)
+            -h  -- Print this usage and exit.
+            -d  -- set -x
+            -v  -- Provide more info
 EOM
     exit 0
 }
 
-parse_yaml() {
-    local file="$1"
+# parse_yaml() {
+#     local file="$1"
 
-    # Parse the yaml file using yq
-    # The end result is an associative array, manifest_vars
-    # The keys are the fields in the yaml file
-    # and the values are the values in the yaml file
-    # shellcheck disable=SC2016
-    if ! values=$(yq 'paths(scalars) as $p | [ ( [ $p[] | tostring ] | join(".") ) , ( getpath($p) | tojson ) ] | join(" ")' "$file"); then
-        printf "Error during parsing..."
-        exit 1
-    fi
-    mapfile -t lines < <(echo "$values" | sed -e 's/^"//' -e 's/"$//' -e 's/\\\\\\"/"/g' -e 's/\\"//g')
-    unset manifest_vars
-    declare -A manifest_vars
-    for line in "${lines[@]}"; do
-        # create the associative array
-        manifest_vars[${line%% *}]=${line#* }
-    done
-}
+#     # Parse the yaml file using yq
+#     # The end result is an associative array, manifest_vars
+#     # The keys are the fields in the yaml file
+#     # and the values are the values in the yaml file
+#     # shellcheck disable=SC2016
+#     if ! values=$(yq 'paths(scalars) as $p | [ ( [ $p[] | tostring ] | join(".") ) , ( getpath($p) | tojson ) ] | join(" ")' "$file"); then
+#         printf "Error during parsing..."
+#         exit 1
+#     fi
+#     mapfile -t lines < <(echo "$values" | sed -e 's/^"//' -e 's/"$//' -e 's/\\\\\\"/"/g' -e 's/\\"//g')
+#     unset manifest_vars
+#     declare -A manifest_vars
+#     for line in "${lines[@]}"; do
+#         # create the associative array
+#         manifest_vars[${line%% *}]=${line#* }
+#     done
+# }
 #
 # This function generates an IP address given as network CIDR and an offset
 # nthhost(192.168.111.0/24,3) => 192.168.111.3
@@ -74,41 +74,30 @@ nthhost() {
     echo "${ips[$nth]}"
 }
 
-wait_for_log() {
-
-    # wait for deploy log file to file to exist
-    count=0
-    while [ ! -f "$BUILD_LOG" ]; do
-        sleep 1
-        if [[ ++$count -gt 20 ]]; then
-            exit 0
-        fi
-    done
-
+etcd_hack() {
+    oc patch etcd cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}' --type=merge
 }
 
-etcd_hack() {
+create_ingress_fip() {
+    printf "Create Ingress Floating IP...\n"
 
-    touch f0
+    ingressVIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.ingressVIP")
 
-    wait_for_log
+    cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
+    cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
 
-    touch f1
+    printf "Create Ingress %s.%s floating ip...\n" "$cluster_name" "$cluster_domain"
+    openstack floating ip list | grep -q "$INGRESS_FIP" >/dev/null 2>&1 || (
+        openstack floating ip create --floating-ip-address "$INGRESS_FIP" --description "API $cluster_name.$cluster_domain" public || (
+            printf "Failed to create Ingress %s.%s floating ip...\n" "$cluster_name" "$cluster_domain"
+            exit 1
+        )
+    )
 
-    while IFS= read -r line; do
-        echo "$line" >>f3
-        [[ "$VERBOSE" =~ true ]] && echo "$line"
-        touch f4
+    infraID=$(get_value_by_tag "$ARTIFACTS_DIR/metadata.json" ".infraID")
 
-        if [[ ${line} =~ "for bootstrapping to complete" ]]; then
-            echo "$line" >f5
-            break
-        fi
-    done | tail -f "$BUILD_LOG"
-
-    touch f2
-
-    oc patch etcd cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}' --type=merge
+    printf "Attach \"Ingress %s.%s\" floating ip to %s...\n" "$cluster_name" "$cluster_domain" "$infraID-ingress-port"
+    openstack floating ip set --port "$infraID-ingress-port" "$INGRESS_FIP" || exit 1
 }
 
 deploy_cluster() {
@@ -121,18 +110,14 @@ deploy_cluster() {
         return 1
     fi
 
+    create_ingress_fip
+
     # Save the ignition artifacts
     #
     cp ./*.ign "$ARTIFACTS_DIR" || return 1
     cp metadata.json "$ARTIFACTS_DIR" || return 1
 
-    # Queue up tasks to run according to the stage in deployment
-    # etcd_hack &
-
     openshift-install create cluster --log-level debug
-
-    # Wait for hacks to finish
-    wait
 }
 
 #
@@ -233,23 +218,15 @@ prepare_openstack() {
         )
     )
 
-    printf "Create ocp_master flavor...\n"
-    openstack flavor show ocp_master >/dev/null 2>&1 || (
-        openstack flavor create --ram 16384 --disk 25 --vcpus 8 ocp_master || (
-            printf "Failed to create ocp_master flavor.."
+    printf "Create ocp flavor...\n"
+    openstack flavor show ocp >/dev/null 2>&1 || (
+        openstack flavor create --ram 24576 --disk 25 --vcpus 16 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB ocp || (
+            printf "Failed to create ocp flavor.."
             exit 1
         )
     )
 
-    printf "Create ocp_worker flavor...\n"
-    openstack flavor show ocp_worker >/dev/null 2>&1 || (
-        openstack flavor create --ram 16384 --disk 25 --vcpus 8 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB ocp_worker || (
-            printf "Failed to create ocp_worker flavor.."
-            exit 1
-        )
-    )
-
-    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiVIP")
+    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.lbFloatingIP")
 
     printf "Create API %s.%s floating ip on %s...\n" "$cluster_name" "$cluster_domain" "$lbFloatingIP"
     (openstack floating ip list | grep -q "$lbFloatingIP" >/dev/null 2>&1) || (
@@ -258,13 +235,11 @@ prepare_openstack() {
             exit 1
         )
     )
-
-    #     )
-    # )
-
 }
 
 patch_ocp() {
+    oc patch etcd cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}' --type=merge
+
     oc scale --replicas=1 ingresscontroller/default -n openshift-ingress-operator
 
     oc scale --replicas=1 deployment.apps/console -n openshift-console
@@ -319,24 +294,6 @@ prepare_for_ocp_worker() {
 
     )
 
-    printf "Create Ingress Floating IP...\n"
-
-    ingressVIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.ingressVIP")
-
-    cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
-    cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
-
-    printf "Create Ingress %s.%s floating ip...\n" "$cluster_name" "$cluster_domain"
-    openstack floating ip list | grep -q "$INGRESS_FIP" >/dev/null 2>&1 || (
-        openstack floating ip create --floating-ip-address "$INGRESS_FIP" --description "API $cluster_name.$cluster_domain" public || (
-            printf "Failed to create Ingress %s.%s floating ip...\n" "$cluster_name" "$cluster_domain"
-            exit 1
-        )
-    )
-
-    infraID=$(get_value_by_tag "$ARTIFACTS_DIR/metadata.json" ".infraID")
-
-    openstack floating ip set --port "$infraID-ingress-port" "$INGRESS_FIP"
 }
 
 create_ocp_worker_net() {
@@ -382,7 +339,7 @@ create_ocp_worker_net() {
     port_name="$infraID.worker-radio-port-$worker_id"
 
     printf "Create %s...\n" "$port_name"
-    openstack port show "$port_name" -c id -f value  2>/dev/null || (
+    openstack port show "$port_name" -c id -f value 2>/dev/null || (
         openstack port create "$port_name" --vnic-type direct --network radio --fixed-ip subnet=radio,ip-address="$address" --tag "$TAG" --tag radio --disable-port-security ||
             (
                 printf "Error creating %s!\n" "$port_name"
@@ -403,7 +360,7 @@ create_ocp_worker_net() {
         OS_PASSWORD=$(get_value_by_tag "$PROJECT_DIR/secure.yaml" ".clouds.openstack.auth.password")
         export OS_PASSWORD
 
-        nova boot --image "$infraID-rhcos" --flavor ocp_worker --user-data "$PROJECT_DIR/build-artifacts/worker.ign" --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_ID",tag=radio --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+        nova boot --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign" --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_ID",tag=radio --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
     )
 }
 
@@ -550,13 +507,16 @@ destroy() {
 VERBOSE="false"
 export VERBOSE
 
-while getopts ":hvo:" opt; do
+while getopts ":hvo:d" opt; do
     case ${opt} in
     o)
         out_dir=$OPTARG
         ;;
     v)
         VERBOSE="true"
+        ;;
+    d) 
+        set -x
         ;;
     h)
         usage
@@ -583,6 +543,7 @@ deploy)
     if [ "$#" -lt 1 ]; then
         usage
     fi
+    prepare_openstack
     deploy "$@"
     ;;
 destroy)
