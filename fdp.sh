@@ -3,10 +3,14 @@
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 ARTIFACTS_DIR="$PROJECT_DIR/build-artifacts"
-export KUBECONFIG="$BUILD_DIR/auth/kubeconfig"
+
+KUBECONFIG=${KUBECONFIG:-"$BUILD_DIR/auth/kubeconfig"}
 
 # Fill in default of openstack if not set
 export OS_CLOUD=${OS_CLOUD:-openstack}
+
+DEPLOY_USER=${DEPLOY_USER:-admin}
+DEPLOY_PROJECT=${DEPLOY_PROJECT:-admin}
 
 WORKER_SDN_IP_OFFSET=${WORKER_SDN_IP_OFFSET:-"70"}
 WORKER_SRIOV_IP_OFFSET=${WORKER_SRIOV_IP_OFFSET:-"10"}
@@ -30,6 +34,14 @@ usage() {
             -h  -- Print this usage and exit.
             -d  -- set -x
             -v  -- Provide more info
+    ENVIRONEMENT VARIABLES
+            INGRESS_FIP -- IP Address to use for the Ingress Floating IP (default 192.168.122.151)
+            WORKER_SDN_IP_OFFSET -- Numerical offset for worker IPs inside OCP subnet (default 70)
+            INGRESS_SRIOV_IP_OFFSET -- Numerical offset for worker IPs inside SRIOV subnet (default 70)
+            DEPLOY_USER -- OpenStack user for deployment (default admin)
+            DEPLOY_PROJECT -- OpenStack project for deployment (default admin)
+            KUBECONFIG
+
 EOM
     exit 0
 }
@@ -57,6 +69,10 @@ EOM
 #
 # This function generates an IP address given as network CIDR and an offset
 # nthhost(192.168.111.0/24,3) => 192.168.111.3
+#
+
+#
+# Calculate the nth host in a given CIDR
 #
 nthhost() {
     address="$1"
@@ -110,58 +126,25 @@ deploy_cluster() {
         return 1
     fi
 
-    create_ingress_fip
-
     # Save the ignition artifacts
     #
     cp ./*.ign "$ARTIFACTS_DIR" || return 1
     cp metadata.json "$ARTIFACTS_DIR" || return 1
 
-    openshift-install create cluster --log-level debug
+    openshift-install create cluster --log-level debug || exit 1
+
+    create_ingress_fip
 }
 
 #
-# pre -> Precheck command.  If true cmd will not be executed
-# cmd -> command to be executed
-# post -> command to check if successful
+# Create resources necessary to deploy OCP
 #
-run_cmd() {
-    local pre="$1"
-    local cmd="$2"
-    local post="$2"
-
-    # if there is precheck command, run it.
-    # if successful, return
-    if [ -n "$pre" ] && $pre; then
-        return 1
-    fi
-
-    if [ -z "$cmd" ]; then
-        return 0
-    fi
-
-    if ! $cmd; then
-        printf "Error: Execution failed: %s!\n" "$cmd"
-        return 1
-    fi
-
-    if [ -z "$post" ]; then
-        return 0
-    fi
-
-    if ! $post; then
-        printf "Error: Execution failed: %s!\n" "$cmd"
-        return 1
-    fi
-
-}
-
 prepare_openstack() {
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
 
     printf "Add swiftoperator role...\n"
-    openstack role add --user admin --project admin swiftoperator
+    openstack role add --user "$DEPLOY_USER" --project "$DEPLOY_PROJECT" swiftoperator
 
     printf "Create external network...\n"
     openstack network show public >/dev/null 2>&1 || (
@@ -186,9 +169,12 @@ prepare_openstack() {
             exit 1
         )
     )
-    printf "Create internal ocp network subnet...\n"
+
+    machine_cidr=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".networking.machineNetwork.cidr")
+
+    printf "Create internal ocp network subnet (%s)...\n" "$machine_cidr"
     openstack subnet show ocp >/dev/null 2>&1 || (
-        openstack subnet create ocp --network ocp --subnet-range 10.0.0.0/16 --dhcp || (
+        openstack subnet create ocp --network ocp --subnet-range "$machine_cidr" --dhcp || (
             printf "Failed to create internal ocp network subnet...\n"
             exit 1
         )
@@ -313,7 +299,7 @@ create_ocp_worker_net() {
     # Calculate an address
     address=$(nthhost "$ocp_cidr" "$((WORKER_SDN_IP_OFFSET + worker_id))")
 
-    port_name="$infraID.worker-port-$worker_id"
+    port_name="$infraID-worker-port-$worker_id"
 
     ingressVIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.ingressVIP")
 
@@ -394,8 +380,8 @@ manage_cluster() {
             return 1
         fi
 
-        if ! PROJECT_ID=$(openstack project show admin -c id -f value); then
-            printf "OCP Admin Project missing!"
+        if ! PROJECT_ID=$(openstack project show "$DEPLOY_PROJECT" -c id -f value); then
+            printf "OCP project \"%s\" missing!" "$DEPLOY_PROJECT"
             exit 1
         fi
         export PROJECT_ID
@@ -429,27 +415,29 @@ sign_csr() {
     oc get csr -o go-template='{{range .items}}{{if not .status}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' | xargs oc adm certificate approve
 }
 
-manage_workers() {
-    cmd="$1"
+destroy_workers() {
+    local cmd="$1"
 
-    if [[ ! $cmd =~ ^apply$|^destroy$ ]]; then
-        printf "Invalid cmd %s\n" "$cmd"
-        return 1
-    fi
+    cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
+    cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
+    infraID=$(get_value_by_tag "$PROJECT_DIR/build-artifacts/metadata.json" ".infraID")
 
-    [[ "$VERBOSE" =~ true ]] && printf "%s workers...\n" "$cmd"
+    openstack server list -c ID -c Name -f value | sed -rn "s/^([^ ]+)[[:space:]]+worker-$cmd\.$cluster_name\.$cluster_domain.*/\1/p" |
+        while read -r uuid; do
+            openstack server delete "$uuid"
+        done
 
+    openstack port list -c ID -c Name -f value | sed -rn "s/^([^ ]+)[[:space:]]+$infraID-worker-port-$cmd.*/\1/p" |
+        while read -r uuid; do
+            openstack port delete "$uuid"
+        done
+
+}
+
+destroy_cluster() {
     (
-        cd "$TERRAFORM_DIR/workers" || return 1
-
-        if ! terraform init; then
-            printf "terraform init failed!\n"
-            return 1
-        fi
-        if ! terraform "$cmd" --auto-approve; then
-            printf "terraform %s failed!\n" "$cmd"
-            return 1
-        fi
+        cd "$PROJECT_DIR/build" || exit 1
+        openshift-install destroy cluster --log-level debug
     )
 }
 
@@ -467,11 +455,12 @@ deploy() {
 
     case $command in
     cluster)
+        prepare_openstack
         manage_cluster "deploy"
         ;;
     workers)
         if [ ${#args[@]} -lt 2 ]; then
-            printf "Error: Missing worker id for deploy cluster!\n"
+            printf "Error: Missing worker id for deploy workers!\n"
             usage
         fi
         prepare_for_ocp_worker
@@ -485,17 +474,36 @@ deploy() {
 }
 
 destroy() {
-    local command="$1"
+    local args=("$@")
+
+    if [ ${#args[@]} -lt 1 ]; then
+        printf "Error: Missing command for deploy!\n"
+        usage
+    fi
+
+    local command="${args[0]}"
 
     [ -z "$command" ] && command="cluster"
 
     case $command in
     cluster)
-        manage_workers "destroy"
-        manage_cluster "destroy"
+        destroy_workers "all"
+        destroy_cluster
         ;;
     workers)
-        manage_workers "destroy"
+        if [ ${#args[@]} -lt 2 ]; then
+            printf "Error: Missing worker [id | all] for destroy workers!\n"
+            usage
+        fi
+        cmd="${args[1]}"
+        if [[ $cmd =~ ^all$ ]]; then
+            cmd="[0-9]+"
+        elif [[ ! $cmd =~ ^[1-9]+[0-9]*|^0$ ]]; then
+            printf "Invalid worker id, integer expected %s\n" "$cmd"
+            return 1
+        fi
+
+        destroy_workers "$cmd"
         ;;
     *)
         printf "Unknown deploy sub command %s!\n" "$command"
@@ -515,7 +523,7 @@ while getopts ":hvo:d" opt; do
     v)
         VERBOSE="true"
         ;;
-    d) 
+    d)
         set -x
         ;;
     h)
@@ -543,13 +551,13 @@ deploy)
     if [ "$#" -lt 1 ]; then
         usage
     fi
-    prepare_openstack
     deploy "$@"
     ;;
 destroy)
-    SUB_COMMAND=$1
-    shift
-    destroy "$SUB_COMMAND"
+    if [ "$#" -lt 1 ]; then
+        usage
+    fi
+    destroy "$@"
     ;;
 prep-osp)
     prepare_openstack
