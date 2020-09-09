@@ -29,7 +29,7 @@ platform:
     apiVIP: 10.0.0.5
     cloud: openstack
     computeFlavor: ocp
-    machinesSubnet: $MACHINES_SUBNET
+    externalDNS: ["192.168.122.1"]
     externalNetwork: public
     ingressVIP: 10.0.0.7
     lbFloatingIP: 192.168.122.150

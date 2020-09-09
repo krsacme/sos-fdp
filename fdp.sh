@@ -140,87 +140,107 @@ deploy_cluster() {
 # Create resources necessary to deploy OCP
 #
 prepare_openstack() {
-    cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
-    cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
-
     printf "Add swiftoperator role...\n"
     openstack role add --user "$DEPLOY_USER" --project "$DEPLOY_PROJECT" swiftoperator
 
     printf "Create external network...\n"
-    openstack network show public >/dev/null 2>&1 || (
-        openstack network create --share --provider-network-type flat --provider-physical-network external --external public || (
-            printf "Failed to create external network\n"
-            exit 1
-        )
-    )
+    openstack network show public >/dev/null 2>&1 || {
+        openstack network create --share --provider-network-type flat --provider-physical-network external --external public ||
+            {
+                printf "Failed to create external network\n"
+                exit 1
+            }
+    }
 
     printf "Create external network subnet...\n"
-    openstack subnet show public >/dev/null 2>&1 || (
-        openstack subnet create --no-dhcp --allocation-pool start=192.168.122.125,end=192.168.122.200 --gateway 192.168.122.1 --subnet-range 192.168.122.0/24 --network public public || (
+    openstack subnet show public >/dev/null 2>&1 || {
+        openstack subnet create --no-dhcp --allocation-pool start=192.168.122.125,end=192.168.122.200 --gateway 192.168.122.1 --subnet-range 192.168.122.0/24 --network public public || {
             printf "Failed to create external network subnet\n"
             exit 1
-        )
-    )
+        }
+    }
 
-    printf "Create internal ocp network...\n"
-    openstack network show ocp >/dev/null 2>&1 || (
-        openstack network create ocp || (
-            printf "Failed tp create create internal ocp network\n"
-            exit 1
-        )
-    )
+    # printf "Create internal ocp network...\n"
+    # openstack network show ocp >/dev/null 2>&1 || {
+    #     openstack network create ocp || {
+    #         printf "Failed tp create create internal ocp network\n"
+    #         exit 1
+    #     }
+    # }
 
-    machine_cidr=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".networking.machineNetwork.cidr")
+    # machine_cidr=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".networking.machineNetwork.cidr") || {
+    #     printf "Could not access .networking.machineNetwork.cidr in %s\n" "$PROJECT_DIR/install-config.yaml"
+    #     exit 1
+    # }
 
-    printf "Create internal ocp network subnet (%s)...\n" "$machine_cidr"
-    openstack subnet show ocp >/dev/null 2>&1 || (
-        openstack subnet create ocp --network ocp --subnet-range "$machine_cidr" --dhcp || (
-            printf "Failed to create internal ocp network subnet...\n"
-            exit 1
-        )
-    )
+    # printf "Create internal ocp network subnet (%s)...\n" "$machine_cidr"
+    # openstack subnet show ocp >/dev/null 2>&1 || {
+    #     openstack subnet create ocp --network ocp --subnet-range "$machine_cidr" --dhcp || {
+    #         printf "Failed to create internal ocp network subnet...\n"
+    #         exit 1
+    #     }
+    # }
+
+    # if ! MACHINES_SUBNET=$(openstack subnet show ocp -c id -f value); then
+    #     printf "OCP Subnet missing!"
+    #     exit 1
+    # fi
+
+    # export MACHINES_SUBNET
+    # envsubst <"$PROJECT_DIR/install-config.yaml" >"$BUILD_DIR/install-config.yaml"
 
     printf "Create external router...\n"
-    openstack router show public >/dev/null 2>&1 || (
-        openstack router create public || (
+    openstack router show public >/dev/null 2>&1 || {
+        openstack router create public || {
             printf "Failed to create external router"
             exit 1
-        )
-    )
+        }
+    }
 
     printf "Add external gateway to external router...\n"
-    (openstack router show public | grep -q -e '.*external_gateway_info.*|.*network_id' >/dev/null 2>&1) || (
-        openstack router set --external-gateway public public || (
+    (openstack router show public | grep -q -e '.*external_gateway_info.*|.*network_id' >/dev/null 2>&1) || {
+        openstack router set --external-gateway public public || {
             printf "External router external-gateway set"
             exit 1
-        )
-    )
+        }
+    }
 
-    printf "Add internal ocp network to external router...\n"
-    (openstack router show public | grep -q -e '.*interfaces_info.*|.*port_id' >/dev/null 2>&1) || (
-        openstack router add subnet public ocp || (
-            printf "Failed to add internal ocp network to external router...\n"
-            exit 1
-        )
-    )
+    # printf "Add internal ocp network to external router...\n"
+    # (openstack router show public | grep -q -e '.*interfaces_info.*|.*port_id' >/dev/null 2>&1) || {
+    #     openstack router add subnet public ocp || {
+    #         printf "Failed to add internal ocp network to external router...\n"
+    #         exit 1
+    #     }
+    # }
 
-    printf "Create ocp flavor...\n"
-    openstack flavor show ocp >/dev/null 2>&1 || (
-        openstack flavor create --ram 24576 --disk 25 --vcpus 16 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB ocp || (
+    computeFlavor=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.computeFlavor") || {
+        printf "Could not access .platform.openstack.computeFlavor\n"
+        exit 1
+    }
+
+    printf "Create ocp flavor %s...\n" "$computeFlavor"
+    openstack flavor show "$computeFlavor" >/dev/null 2>&1 || {
+        openstack flavor create --ram 24576 --disk 25 --vcpus 16 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$computeFlavor" || {
             printf "Failed to create ocp flavor.."
             exit 1
-        )
-    )
+        }
+    }
 
-    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.lbFloatingIP")
+    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.lbFloatingIP") || {
+        printf "Could not access .platform.openstack.lbFloatingIP\n"
+        exit 1
+    }
+
+    cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
+    cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
 
     printf "Create API %s.%s floating ip on %s...\n" "$cluster_name" "$cluster_domain" "$lbFloatingIP"
-    (openstack floating ip list | grep -q "$lbFloatingIP" >/dev/null 2>&1) || (
-        openstack floating ip create --floating-ip-address "$lbFloatingIP" --description "API $cluster_name.$cluster_domain" public || (
+    (openstack floating ip list | grep -q "$lbFloatingIP" >/dev/null 2>&1) || {
+        openstack floating ip create --floating-ip-address "$lbFloatingIP" --description "API $cluster_name.$cluster_domain" public || {
             printf "Failed to create API %s.%s floating ip...\n" "$cluster_name" "$cluster_domain"
             exit 1
-        )
-    )
+        }
+    }
 }
 
 patch_ocp() {
@@ -246,10 +266,16 @@ get_value_by_tag() {
     local yaml="$1"
     local tag="$2"
 
-    val=$(yq "$tag" "$yaml" | tr -d \") || (
+    val=$(yq "$tag" "$yaml") || return 1
+
+    if [[ "$val" =~ null ]]; then
         printf "Error: Unable to extract %s from %s\n" "$tag" "$yaml"
-        exit 1
-    )
+        return 1
+    fi
+
+    val="${val%\"}"
+    val="${val#\"}"
+
     echo "$val"
 }
 
@@ -261,26 +287,53 @@ get_tag() {
 }
 
 prepare_for_ocp_worker() {
+    TAG=$(get_tag)
+
     printf "Create sriov network...\n"
-    openstack network show radio >/dev/null 2>&1 || (
+    openstack network show radio >/dev/null 2>&1 || {
         openstack network create radio --provider-physical-network radio --provider-network-type vlan ||
-            (
+            {
                 printf "Error creating sriov network!"
                 exit 1
-            )
-    )
+            }
+    }
+
+    openstack network set --tag "$TAG" radio || exit 1
 
     printf "Create sriov network subnet...\n"
-    openstack subnet show radio >/dev/null 2>&1 || (
+    openstack subnet show radio >/dev/null 2>&1 || {
         openstack subnet create radio --network radio --subnet-range 192.0.2.0/24 --dhcp ||
-            (
+            {
                 printf "Error creating OCP sriov subnet!"
                 exit 1
-            )
+            }
+    }
 
-    )
+    openstack subnet set --tag "$TAG" radio || exit 1
 
+    printf "Create dpdk network...\n"
+    openstack network show uplink >/dev/null 2>&1 || {
+        openstack network create uplink ||
+            {
+                printf "Error creating dpdk network!"
+                exit 1
+            }
+    }
+
+    openstack network set --tag "$TAG" uplink || exit 1
+
+    printf "Create dpdk network subnet...\n"
+    openstack subnet show uplink >/dev/null 2>&1 || {
+        openstack subnet create uplink --network uplink --subnet-range 192.0.3.0/24 --dhcp ||
+            {
+                printf "Error creating dpdk subnet!"
+                exit 1
+            }
+    }
+
+    openstack subnet set --tag "$TAG" uplink || exit 1
 }
+
 
 create_ocp_worker_net() {
     local worker_id="$1"
@@ -290,23 +343,23 @@ create_ocp_worker_net() {
     infraID=$(get_value_by_tag "$PROJECT_DIR/build-artifacts/metadata.json" ".infraID")
     TAG=$(get_tag)
 
-    ocp_cidr=$(openstack subnet show ocp -c cidr -f value) || exit 1
+    ocp_cidr=$(openstack subnet show "$infraID-nodes" -c cidr -f value) || exit 1
     #
     # Create a SDN port for the worker
     #
-    printf "Create %s SDN port...\n" "worker-$worker_id"
+    port_name="$infraID-worker-port-$worker_id"
+
+    printf "Create %s SDN port...\n" "$port_name"
 
     # Calculate an address
     address=$(nthhost "$ocp_cidr" "$((WORKER_SDN_IP_OFFSET + worker_id))")
-
-    port_name="$infraID-worker-port-$worker_id"
 
     ingressVIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.ingressVIP")
 
     printf "Create %s, with ip=%s...\n" "$port_name" "$address"
 
     openstack port show "$port_name" 2>/dev/null || (
-        openstack port create "$port_name" --network ocp --security-group "$infraID-worker" --fixed-ip subnet=ocp,ip-address="$address" --allowed-address ip-address="$ingressVIP" ||
+        openstack port create "$port_name" --network "$infraID-openshift" --security-group "$infraID-worker" --fixed-ip subnet="$infraID-nodes,ip-address=$address" --allowed-address ip-address="$ingressVIP" ||
             (
                 printf "Error creating %s!" "$port_name"
                 exit 1
@@ -334,6 +387,12 @@ create_ocp_worker_net() {
     )
     SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
 
+    #
+    # Get the DPDK network uuid
+    #
+
+    DPDK_ID=$(openstack network show uplink -c id -f value) || exit 1
+
     printf "Launch Worker VM...\n"
     openstack server show "worker-$worker_id.$cluster_name.$cluster_domain" 2>/dev/null || (
         OS_USERNAME=$(get_value_by_tag "$PROJECT_DIR/clouds.yaml" ".clouds.openstack.auth.username")
@@ -346,7 +405,16 @@ create_ocp_worker_net() {
         OS_PASSWORD=$(get_value_by_tag "$PROJECT_DIR/secure.yaml" ".clouds.openstack.auth.password")
         export OS_PASSWORD
 
-        nova boot --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign" --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_ID",tag=radio --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+        nova boot --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign" --nic port-id="$SDN_ID",tag=sdn --nic net-id="$DPDK_ID",tag=uplink --nic port-id="$SRIOV_ID",tag=radio --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+
+        # maps to 
+        # curl http://169.254.169.254/openstack/latest/meta_data.json 
+        #
+        # modprobe vfio_pci
+        # echo "vfio_pci" >  /sys/bus/pci/devices/0000\:00\:06.0/driver_override
+        #
+
+        #approve_csr
     )
 }
 
@@ -360,46 +428,55 @@ clouds:
 EOF
 }
 
-manage_cluster() {
-    cmd="$1"
+create_deploy() {
+    [ -d "$BUILD_DIR" ] || mkdir "$BUILD_DIR"
 
-    case $cmd in
-    deploy)
-        rm -rf "$BUILD_DIR"
-        mkdir -p "$BUILD_DIR"
-        if [ ! -e "$PROJECT_DIR/clouds.yaml" ]; then
-            echo "Error: missing $PROJECT_DIR/clouds.yaml file!"
-            return 1
-        fi
-        if [ ! -e "$PROJECT_DIR/secure.yaml" ]; then
-            echo "Error: missing $PROJECT_DIR/secure.yaml file!"
-            return 1
-        fi
-        if [ ! -e ./install-config.yaml ]; then
-            echo "Error: missing install-config.yaml file!"
-            return 1
-        fi
+    if [ ! -e "$PROJECT_DIR/clouds.yaml" ]; then
+        echo "Error: missing $PROJECT_DIR/clouds.yaml file!"
+        return 1
+    fi
 
+    if [ ! -e "$PROJECT_DIR/secure.yaml" ]; then
+        echo "Error: missing $PROJECT_DIR/secure.yaml file!"
+        return 1
+    fi
+
+    if [ ! -e ./install-config.yaml ]; then
+        echo "Error: missing install-config.yaml file!"
+        return 1
+    fi
+
+    if [ ! -f "$BUILD_DIR/clouds.yaml" ] || [ ./clouds.yaml -nt "$BUILD_DIR/clouds.yaml" ]; then
         if ! PROJECT_ID=$(openstack project show "$DEPLOY_PROJECT" -c id -f value); then
             printf "OCP project \"%s\" missing!" "$DEPLOY_PROJECT"
             exit 1
         fi
         export PROJECT_ID
 
+        printf "Generate %s...\n" "$BUILD_DIR/clouds.yaml"
+
         if ! yq -y ".clouds.openstack.auth += {\"project_id\" : \"$PROJECT_ID\" }" clouds.yaml >"$BUILD_DIR/clouds.yaml"; then
             printf "Error generating %s" "$BUILD_DIR/clouds.yaml"
         fi
+    fi
 
-        cp "$PROJECT_DIR/secure.yaml" "$BUILD_DIR"
+    if [ ! -f "$BUILD_DIR/secure.yaml" ] || [ ./secure.yaml -nt "$PROJECT_DIR/secure.yaml" ]; then
+        printf "Copy %s...\n" "$BUILD_DIR/secure.yaml"
 
-        if ! MACHINES_SUBNET=$(openstack subnet show ocp -c id -f value); then
-            printf "OCP Subnet missing!"
-            exit 1
-        fi
+        cp "$PROJECT_DIR/secure.yaml" "$BUILD_DIR" || exit 1
+    fi
 
-        export MACHINES_SUBNET
-        envsubst <"$PROJECT_DIR/install-config.yaml" >"$BUILD_DIR/install-config.yaml"
+    if [ ! -f "$BUILD_DIR/install-config.yaml" ] || [ ./install-config.yaml -nt "$PROJECT_DIR/install-config.yaml" ]; then
+        printf "Copy %s...\n" "$BUILD_DIR/clouds.yaml"
+        cp "$PROJECT_DIR/install-config.yaml" "$BUILD_DIR" || exit 1
+    fi
+}
 
+manage_cluster() {
+    cmd="$1"
+
+    case $cmd in
+    deploy)
         deploy_cluster
         ;;
     destroy) ;;
@@ -415,6 +492,10 @@ sign_csr() {
     oc get csr -o go-template='{{range .items}}{{if not .status}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' | xargs oc adm certificate approve
 }
 
+approve_csr() {
+    oc observe csr --maximum-errors=1 --resync-period=0s -a '{.status.conditions[*].type}' -a '{.spec.username}' -- "$PROJECT_DIR/signer.sh"
+}
+
 destroy_workers() {
     local cmd="$1"
 
@@ -424,6 +505,7 @@ destroy_workers() {
 
     openstack server list -c ID -c Name -f value | sed -rn "s/^([^ ]+)[[:space:]]+worker-$cmd\.$cluster_name\.$cluster_domain.*/\1/p" |
         while read -r uuid; do
+            #oc delete node worker-0.fdp.nfv
             openstack server delete "$uuid"
         done
 
@@ -455,6 +537,7 @@ deploy() {
 
     case $command in
     cluster)
+        create_deploy
         prepare_openstack
         manage_cluster "deploy"
         ;;
@@ -531,7 +614,8 @@ while getopts ":hvo:d" opt; do
         exit 0
         ;;
     \?)
-        echo "Invalid Option: -$OPTARG" 1>&2
+        echo "Invalid Opti
+        on: -$OPTARG" 1>&2
         exit 1
         ;;
     esac
@@ -559,10 +643,14 @@ destroy)
     fi
     destroy "$@"
     ;;
+create-deploy)
+    create_deploy
+    ;;
 prep-osp)
     prepare_openstack
     ;;
 create-secure)
+    create_deploy
     create_secure
     ;;
 patch-ocp)
@@ -572,7 +660,11 @@ prep-ocp)
     prepare_for_ocp_worker
     ;;
 csr)
-    sign_csr
+    approve_csr
+    approve_csr
+    ;;
+clean)
+    rm -rf "$BUILD_DIR"
     ;;
 *)
     echo "Unknown command: $COMMAND"
