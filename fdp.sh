@@ -246,6 +246,8 @@ prepare_openstack() {
 patch_ocp() {
     oc patch etcd cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}' --type=merge
 
+    oc scale --replicas=1 deployment/etcd-quorum-guard -n openshift-machine-config-operator
+    
     oc scale --replicas=1 ingresscontroller/default -n openshift-ingress-operator
 
     oc scale --replicas=1 deployment.apps/console -n openshift-console
@@ -410,9 +412,14 @@ create_ocp_worker_net() {
         # maps to 
         # curl http://169.254.169.254/openstack/latest/meta_data.json 
         #
-        # modprobe vfio_pci
-        # echo "vfio_pci" >  /sys/bus/pci/devices/0000\:00\:06.0/driver_override
+        # echo "options vfio enable_unsafe_noiommu_mode=1" > /etc/modprobe.d/vfio-noiommu.conf
         #
+        # modprobe vfio-pci
+        #
+        # echo -n "0000:00:06.0" > /sys/bus/pci/devices/0000\:00\:06.0/driver/unbind
+        # echo "vfio-pci" >  /sys/bus/pci/devices/0000\:00\:06.0/driver_override
+        #
+        # # echo -n "0000:00:06.0" > /sys/bus/pci/drivers/iavf/unbind
 
         #approve_csr
     )
