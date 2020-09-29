@@ -3,15 +3,13 @@
 This repository contains files related to a PoC enabling Fast-Datapath with Kubernetes on OpenStack.
 There are several parts to the PoC:
   1. Deploy a base k8s cluster with no workers on OpenStack
-  2. Deploy workers into the cluster
-  3. Deploy the Performance-Add-On operator to enable tuning and hugepage support
-  4. Create a MachineConfig Object to configure the vfio driver
-  5. Deploy the modified sriov-network-operator
+  1. Deploy workers into the cluster
+  1. Deploy the Performance-Add-On operator to enable tuning and hugepage support
+  1. Create a MachineConfig Object to configure the vfio driver
+  1. Deploy the modified sriov-network-operator
 
 # Deploy the base cluster
  
-
-
 # Deploy the workers
 
 # Deploy SriovNetworkOperator

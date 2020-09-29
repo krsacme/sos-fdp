@@ -264,7 +264,7 @@ spec:
                 operator: Exists
               containers:
                 - name: sriov-network-operator
-                  image: origin-sriov-network-operator:latest
+                  image: quay.io/aasmith/sriov-network-operator:latest
                   command:
                   - sriov-network-operator
                   imagePullPolicy: Always
