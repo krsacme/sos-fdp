@@ -1,1 +1,32 @@
 # sos-fdp
+
+This repository contains files related to a PoC enabling Fast-Datapath with Kubernetes on OpenStack.
+There are several parts to the PoC:
+  1. Deploy a base k8s cluster with no workers on OpenStack
+  2. Deploy workers into the cluster
+  3. Deploy the Performance-Add-On operator to enable tuning and hugepage support
+  4. Create a MachineConfig Object to configure the vfio driver
+  5. Deploy the modified sriov-network-operator
+
+# Deploy the base cluster
+ 
+
+
+# Deploy the workers
+
+# Deploy SriovNetworkOperator
+
+To deploy the PoC sriov-network-operator
+  - kubectl apply -f deploy/namespace.yaml
+  - kubectl apply -f deploy/sriov-network-operator.v4.6.0.clusterserviceversion.yaml
+
+To create node policies for the attached interfaces
+  - kubectl apply -f deploy/nodepolicy-radio-downlink.yaml
+  - kubectl apply -f deploy/nodepolicy-radio-uplink.yaml
+  
+The deploy directory contains the following files:
+
+* namespace.yaml -- Create a test namespace for PoC
+* nodepolicy-radio-downlink -- Create an SriovNetworkNodePolicy for the radio downlink interface
+* nodepolicy-radio-uplink -- Create an SriovNetworkNodePolicy for the radio uplink interface
+*
