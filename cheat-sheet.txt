@@ -1,0 +1,3 @@
+oc get node worker-0.fdp.nfv -o json | jq '.status.allocatable'
+
+oc get net-attach-def
