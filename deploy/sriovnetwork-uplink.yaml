@@ -1,0 +1,14 @@
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetwork
+metadata:
+  name: sriov-uplink
+  namespace: openshift-sriov-network-operator
+spec:
+  ipam: |
+    {
+    }
+  linkState: auto
+  networkNamespace: nfv
+  resourceName: intelnics_radio_uplink
+  spoofChk: 'off'
+  trust: 'on'

@@ -16,6 +16,11 @@ WORKER_SDN_IP_OFFSET=${WORKER_SDN_IP_OFFSET:-"70"}
 WORKER_SRIOV_IP_OFFSET=${WORKER_SRIOV_IP_OFFSET:-"10"}
 INGRESS_FIP=${INGRESS_FIP:-"192.168.122.151"}
 
+# declare -a networks=("radio_up 192.0.2.0/24 sriov"
+#     "radio_down 192.0.3.0/24 sriov" 
+#     "uplink1 192.0.10.0/24 dpdk"
+#     "uplink2 192.0.11.0/24 dpdk")
+
 usage() {
     local out_dir="$1"
 
@@ -244,10 +249,21 @@ prepare_openstack() {
 }
 
 patch_ocp() {
+    oc patch clusterversion/version --type='merge' -p "$(
+        cat <<-EOF
+spec:
+  overrides:
+    - group: apps/v1
+      kind: Deployment
+      name: etcd-quorum-guard
+      namespace: openshift-machine-config-operator
+      unmanaged: true
+EOF
+    )"
     oc patch etcd cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}' --type=merge
 
     oc scale --replicas=1 deployment/etcd-quorum-guard -n openshift-machine-config-operator
-    
+
     oc scale --replicas=1 ingresscontroller/default -n openshift-ingress-operator
 
     oc scale --replicas=1 deployment.apps/console -n openshift-console
@@ -288,54 +304,77 @@ get_tag() {
     echo "$TAG"
 }
 
+create_network() {
+    local name="$1"
+    local tag="$2"
+    local cidr="$3"
+    local net_type="$4"
+
+    params=(--provider-physical-network radio --provider-network-type vlan)
+
+    if [[ $net_type =~ dpdk ]]; then
+        printf "Create dpdk network...%s\n" "$name"
+        params=()
+    else
+        printf "Create sriov network...%s\n" "$name"
+    fi
+
+    openstack network show "$name" >/dev/null 2>&1 || {
+        openstack network create "$name" "${params[@]}" ||
+            {
+                printf "Error creating sriov network...%s!" "$name"
+                exit 1
+            }
+    }
+
+    openstack network set --tag "$tag" "$name" || exit 1
+
+    printf "Create network %s subnet...\n" "$name"
+    openstack subnet show "$name" >/dev/null 2>&1 || {
+        openstack subnet create "$name" --network "$name" --subnet-range "$cidr" --dhcp ||
+            {
+                printf "Error creating sriov subnet...%s" "$name"
+                exit 1
+            }
+    }
+    openstack subnet set --tag "$TAG" "$name" || exit 1
+}
+
 prepare_for_ocp_worker() {
     TAG=$(get_tag)
 
-    printf "Create sriov network...\n"
-    openstack network show radio >/dev/null 2>&1 || {
-        openstack network create radio --provider-physical-network radio --provider-network-type vlan ||
-            {
-                printf "Error creating sriov network!"
-                exit 1
-            }
-    }
+    create_network "radio_uplink" "$TAG" "192.0.2.0/24" "sriov"
+    create_network "radio_downlink" "$TAG" "192.0.3.0/24" "sriov"
 
-    openstack network set --tag "$TAG" radio || exit 1
-
-    printf "Create sriov network subnet...\n"
-    openstack subnet show radio >/dev/null 2>&1 || {
-        openstack subnet create radio --network radio --subnet-range 192.0.2.0/24 --dhcp ||
-            {
-                printf "Error creating OCP sriov subnet!"
-                exit 1
-            }
-    }
-
-    openstack subnet set --tag "$TAG" radio || exit 1
-
-    printf "Create dpdk network...\n"
-    openstack network show uplink >/dev/null 2>&1 || {
-        openstack network create uplink ||
-            {
-                printf "Error creating dpdk network!"
-                exit 1
-            }
-    }
-
-    openstack network set --tag "$TAG" uplink || exit 1
-
-    printf "Create dpdk network subnet...\n"
-    openstack subnet show uplink >/dev/null 2>&1 || {
-        openstack subnet create uplink --network uplink --subnet-range 192.0.3.0/24 --dhcp ||
-            {
-                printf "Error creating dpdk subnet!"
-                exit 1
-            }
-    }
-
-    openstack subnet set --tag "$TAG" uplink || exit 1
+    create_network "uplink1" "$TAG" "192.0.10.0/24" "dpdk"
+    create_network "uplink2" "$TAG" "192.0.11.0/24" "dpdk"
 }
 
+create_ocp_sriov_port() {
+    local worker_id="$1"
+    local tag="$2"
+    local infraID="$3"
+    local network="$4"
+
+    #
+    # Create an SRIOV port for the worker
+    #
+
+    port_name="$infraID-worker-$worker_id-$network"
+
+    openstack port show "$port_name" -c id -f value >/dev/null 2>&1 || (
+        openstack port create "$port_name" --vnic-type direct --network "$network" \
+            --tag "$tag" --tag "$network" \
+            --disable-port-security --binding-profile trusted=true >/dev/null ||
+            (
+                printf "Error creating %s!\n" "$port_name"
+                exit 1
+            )
+    )
+    SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
+
+    echo "$SRIOV_ID"
+}
 
 create_ocp_worker_net() {
     local worker_id="$1"
@@ -361,13 +400,15 @@ create_ocp_worker_net() {
     printf "Create %s, with ip=%s...\n" "$port_name" "$address"
 
     openstack port show "$port_name" 2>/dev/null || (
-        openstack port create "$port_name" --network "$infraID-openshift" --security-group "$infraID-worker" --fixed-ip subnet="$infraID-nodes,ip-address=$address" --allowed-address ip-address="$ingressVIP" ||
+        openstack port create "$port_name" --network "$infraID-openshift" \
+            --security-group "$infraID-worker" --fixed-ip subnet="$infraID-nodes,ip-address=$address" \
+            --allowed-address ip-address="$ingressVIP" --binding-profile sdn=true ||
             (
                 printf "Error creating %s!" "$port_name"
                 exit 1
             )
     )
-    openstack port set --tag "$TAG" "$port_name"
+    openstack port set --tag "$TAG" "$port_name" >/dev/null
 
     SDN_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
 
@@ -375,25 +416,31 @@ create_ocp_worker_net() {
     # Create an SRIOV port for the worker
     #
 
-    radio_cidr=$(openstack subnet show radio -c cidr -f value) || exit 1
-    address=$(nthhost "$radio_cidr" "$((WORKER_SRIOV_IP_OFFSET + worker_id))")
-    port_name="$infraID.worker-radio-port-$worker_id"
+    # radio_cidr=$(openstack subnet show radio -c cidr -f value) || exit 1
+    # address=$(nthhost "$radio_cidr" "$((WORKER_SRIOV_IP_OFFSET + worker_id))")
+    # port_name="$infraID.worker-radio-port-$worker_id"
 
-    printf "Create %s...\n" "$port_name"
-    openstack port show "$port_name" -c id -f value 2>/dev/null || (
-        openstack port create "$port_name" --vnic-type direct --network radio --fixed-ip subnet=radio,ip-address="$address" --tag "$TAG" --tag radio --disable-port-security ||
-            (
-                printf "Error creating %s!\n" "$port_name"
-                exit 1
-            )
-    )
-    SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
-
+    # printf "Create %s...\n" "$port_name"
+    # openstack port show "$port_name" -c id -f value 2>/dev/null || (
+    #     openstack port create "$port_name" --vnic-type direct --network radio \
+    #      --fixed-ip subnet=radio,ip-address="$address" --tag "$TAG" --tag radio \
+    #      --disable-port-security --binding-profile trusted=true --binding-profile vf=true ||
+    #         (
+    #             printf "Error creating %s!\n" "$port_name"
+    #             exit 1
+    #         )
+    # )
+    # SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
+    printf "Create %s...\n" "sriov port 1"
+    SRIOV_ID1=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_uplink")
+    printf "Create %s...\n" "sriov port 2"
+    SRIOV_ID2=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_downlink")
     #
     # Get the DPDK network uuid
     #
 
-    DPDK_ID=$(openstack network show uplink -c id -f value) || exit 1
+    DPDK_ID=$(openstack network show uplink1 -c id -f value) || exit 1
+    DPDK2_ID=$(openstack network show uplink2 -c id -f value) || exit 1
 
     printf "Launch Worker VM...\n"
     openstack server show "worker-$worker_id.$cluster_name.$cluster_domain" 2>/dev/null || (
@@ -407,10 +454,16 @@ create_ocp_worker_net() {
         OS_PASSWORD=$(get_value_by_tag "$PROJECT_DIR/secure.yaml" ".clouds.openstack.auth.password")
         export OS_PASSWORD
 
-        nova boot --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign" --nic port-id="$SDN_ID",tag=sdn --nic net-id="$DPDK_ID",tag=uplink --nic port-id="$SRIOV_ID",tag=radio --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+        # nova boot --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign"\
+        #  --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_ID",tag=radio --nic net-id="$DPDK_ID",tag=uplink\
+        #   --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
 
-        # maps to 
-        # curl http://169.254.169.254/openstack/latest/meta_data.json 
+        openstack server create --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
+            --nic port-id="$SDN_ID" --nic port-id="$SRIOV_ID1" --nic port-id="$SRIOV_ID2" --nic net-id="$DPDK_ID" --nic net-id="$DPDK2_ID"\
+            --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+
+        # maps to
+        # curl http://169.254.169.254/openstack/latest/meta_data.json
         #
         # echo "options vfio enable_unsafe_noiommu_mode=1" > /etc/modprobe.d/vfio-noiommu.conf
         #
@@ -420,6 +473,9 @@ create_ocp_worker_net() {
         # echo "vfio-pci" >  /sys/bus/pci/devices/0000\:00\:06.0/driver_override
         #
         # # echo -n "0000:00:06.0" > /sys/bus/pci/drivers/iavf/unbind
+        #
+        # oc adm drain --ignore-daemonsets worker-0.fdp.nfv
+        # oc delete nodes/worker-0.fdp.nfv
 
         #approve_csr
     )
@@ -516,6 +572,12 @@ destroy_workers() {
             openstack server delete "$uuid"
         done
 
+    # delete sriov ports
+    openstack port list -c ID -c Name -f value | sed -rn "s/^([^ ]+)[[:space:]]+$infraID-worker-$cmd.*/\1/p" |
+        while read -r uuid; do
+            openstack port delete "$uuid"
+        done
+    # delete sdn ports
     openstack port list -c ID -c Name -f value | sed -rn "s/^([^ ]+)[[:space:]]+$infraID-worker-port-$cmd.*/\1/p" |
         while read -r uuid; do
             openstack port delete "$uuid"
@@ -577,7 +639,7 @@ destroy() {
 
     case $command in
     cluster)
-        destroy_workers "all"
+        destroy_workers "[0-9]+"
         destroy_cluster
         ;;
     workers)

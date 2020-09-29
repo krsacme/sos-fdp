@@ -1,0 +1,17 @@
+apiVersion: sriovnetwork.openshift.io/v1
+kind: SriovNetworkNodePolicy
+metadata:
+  name: radio-uplink
+  namespace: openshift-sriov-network-operator
+spec:
+  deviceType: vfio-pci
+  nicSelector:
+    deviceID: 154c
+    rootDevices:
+      - '0000:00:07.0'
+    vendor: '8086'
+  nodeSelector:
+    feature.node.kubernetes.io/network-sriov.capable: 'true'
+  numVfs: 1
+  priority: 99
+  resourceName: intelnics_radio_uplink
