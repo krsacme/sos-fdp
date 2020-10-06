@@ -1,0 +1,38 @@
+kind: MachineConfig
+apiVersion: machineconfiguration.openshift.io/v1
+metadata:
+  name: 20-mount-config
+  labels:
+    machineconfiguration.openshift.io/role: worker
+    machineconfiguration.openshift.io/hostname: worker-0.fdp.nfv
+spec:
+  osImageURL: ''
+  config:
+    ignition:
+      version: 2.2.0
+    systemd:
+      units:
+        - name: create-mountpoint-var-config.service 
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Create mountpoint /var/config
+            Before=kubelet.service
+
+            [Service]
+            ExecStart=/bin/mkdir -p /var/config
+
+            [Install]
+            WantedBy=var-config.mount
+          
+        - name: var-config.mount
+          enabled: true
+          contents: |
+            [Unit]
+            Before=local-fs.target
+            [Mount]
+            Where=/var/config
+            What=/dev/disk/by-label/config-2
+            [Install]
+            WantedBy=local-fs.target
+          

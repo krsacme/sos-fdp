@@ -9,8 +9,14 @@ There are several parts to the PoC:
   1. Deploy the modified sriov-network-operator
 
 # Deploy the base cluster
+  1. ./fdp.sh deploy cluster
  
 # Deploy the workers
+  1. ./fdp.sh deploy workers 0
+  1. ./fdp.sh csr -- Wait for two approvals
+  1. ./fdp.sh deploy workers 1 
+  1. ./fdp.sh csr -- Wait for two approvals
+  1. etc...
 
 # Deploy SriovNetworkOperator
 

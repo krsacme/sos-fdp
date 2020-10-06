@@ -16,6 +16,8 @@ WORKER_SDN_IP_OFFSET=${WORKER_SDN_IP_OFFSET:-"70"}
 WORKER_SRIOV_IP_OFFSET=${WORKER_SRIOV_IP_OFFSET:-"10"}
 INGRESS_FIP=${INGRESS_FIP:-"192.168.122.151"}
 
+WORKER_FLAVOR="ocp-worker"
+
 # declare -a networks=("radio_up 192.0.2.0/24 sriov"
 #     "radio_down 192.0.3.0/24 sriov" 
 #     "uplink1 192.0.10.0/24 dpdk"
@@ -218,14 +220,22 @@ prepare_openstack() {
     #     }
     # }
 
-    computeFlavor=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.computeFlavor") || {
+    masterFlavor=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.computeFlavor") || {
         printf "Could not access .platform.openstack.computeFlavor\n"
         exit 1
     }
 
-    printf "Create ocp flavor %s...\n" "$computeFlavor"
-    openstack flavor show "$computeFlavor" >/dev/null 2>&1 || {
-        openstack flavor create --ram 24576 --disk 25 --vcpus 16 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$computeFlavor" || {
+    printf "Create ocp flavor %s...\n" "$masterFlavor"
+    openstack flavor show "$masterFlavor" >/dev/null 2>&1 || {
+        openstack flavor create --ram 24576 --disk 25 --vcpus 12 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$masterFlavor" || {
+            printf "Failed to create ocp flavor.."
+            exit 1
+        }
+    }
+
+    printf "Create ocp flavor %s...\n" "$WORKER_FLAVOR"
+    openstack flavor show "$WORKER_FLAVOR" >/dev/null 2>&1 || {
+        openstack flavor create --ram 16384 --disk 25 --vcpus 8 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$WORKER_FLAVOR" || {
             printf "Failed to create ocp flavor.."
             exit 1
         }
@@ -458,7 +468,7 @@ create_ocp_worker_net() {
         #  --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_ID",tag=radio --nic net-id="$DPDK_ID",tag=uplink\
         #   --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
 
-        openstack server create --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
+        openstack server create --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
             --nic port-id="$SDN_ID" --nic port-id="$SRIOV_ID1" --nic port-id="$SRIOV_ID2" --nic net-id="$DPDK_ID" --nic net-id="$DPDK2_ID"\
             --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
 
