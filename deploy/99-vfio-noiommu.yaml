@@ -1,10 +1,9 @@
 kind: MachineConfig
 apiVersion: machineconfiguration.openshift.io/v1
 metadata:
-  name: 99-worker-bind-vfs
+  name: 99-vrio-noiommu
   labels:
     machineconfiguration.openshift.io/role: worker
-    machineconfiguration.openshift.io/hostname: worker-0.fdp.nfv
 spec:
   osImageURL: ''
   config:

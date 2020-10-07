@@ -4,7 +4,6 @@ metadata:
   name: 20-mount-config
   labels:
     machineconfiguration.openshift.io/role: worker
-    machineconfiguration.openshift.io/hostname: worker-0.fdp.nfv
 spec:
   osImageURL: ''
   config:
