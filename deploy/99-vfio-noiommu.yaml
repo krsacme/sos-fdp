@@ -1,7 +1,7 @@
 kind: MachineConfig
 apiVersion: machineconfiguration.openshift.io/v1
 metadata:
-  name: 99-vrio-noiommu
+  name: 99-vfio-noiommu
   labels:
     machineconfiguration.openshift.io/role: worker
 spec:
