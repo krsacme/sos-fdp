@@ -6,10 +6,8 @@ metadata:
 spec:
   deviceType: vfio-pci
   nicSelector:
+    networkID: ea24bd04-8674-4f69-b0ee-fa0b3bd20509
     deviceID: 154c
-    rootDevices:
-      - '0000:00:08.0'
-    vendor: '8086'
   nodeSelector:
     feature.node.kubernetes.io/network-sriov.capable: 'true'
   numVfs: 1

@@ -1,0 +1,48 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: "trex-app"
+  namespace: "nfv"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trex
+  template:
+    metadata:
+      labels:
+        app: trex
+    spec:
+      nodeSelector:
+        examplecnf.openshift.io/trex: ""
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: trex
+      containers:
+      - name: trex
+        command: ["sleep", "99999"]
+        image: quay.io/krsacme/trex-container-app:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["IPC_LOCK", "NET_ADMIN"]
+        resources:
+          limits:
+            hugepages-1Gi: 4Gi
+            memory: 1000Mi
+            cpu: "4"
+            openshift.io/intelnics_radio_downlink: "1"
+            openshift.io/intelnics_radio_uplink: "1"
+          requests:
+            hugepages-1Gi: 4Gi
+            memory: 1000Mi
+            cpu: "4"
+            openshift.io/intelnics_radio_downlink: "1"
+            openshift.io/intelnics_radio_uplink: "1"
+        volumeMounts:
+        - name: hugepage
+          mountPath: /dev/hugepages
+      volumes:
+      - name: hugepage
+        emptyDir:
+          medium: HugePages

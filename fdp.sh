@@ -19,7 +19,7 @@ INGRESS_FIP=${INGRESS_FIP:-"192.168.122.151"}
 WORKER_FLAVOR="ocp-worker"
 
 # declare -a networks=("radio_up 192.0.2.0/24 sriov"
-#     "radio_down 192.0.3.0/24 sriov" 
+#     "radio_down 192.0.3.0/24 sriov"
 #     "uplink1 192.0.10.0/24 dpdk"
 #     "uplink2 192.0.11.0/24 dpdk")
 
@@ -123,6 +123,26 @@ create_ingress_fip() {
     openstack floating ip set --port "$infraID-ingress-port" "$INGRESS_FIP" || exit 1
 }
 
+function apply_bootstrap_etcd_hack() {
+    # This is needed for now due to etcd changes in 4.4:
+    # https://github.com/openshift/cluster-etcd-operator/pull/279
+    while ! oc get etcds cluster >/dev/null 2>&1; do
+        sleep 3
+    done
+    echo "API server is up, applying etcd hack"
+    oc patch etcd cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableEtcd": true}}}' --type=merge
+}
+
+function apply_auth_hack() {
+    # This is needed for now due to recent change in auth:
+    # https://github.com/openshift/cluster-authentication-operator/pull/318
+    while ! oc get authentications.operator.openshift.io cluster >/dev/null 2>&1; do
+        sleep 3
+    done
+    echo "Auth operator is now available, applying auth hack"
+    oc patch authentications.operator.openshift.io cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableOAuthServer": true}}}' --type=merge
+}
+
 deploy_cluster() {
     # Assume $BUILD_DIR has been freshly created and empty
     #
@@ -137,6 +157,9 @@ deploy_cluster() {
     #
     cp ./*.ign "$ARTIFACTS_DIR" || return 1
     cp metadata.json "$ARTIFACTS_DIR" || return 1
+
+    apply_auth_hack &
+    apply_bootstrap_etcd_hack &
 
     openshift-install create cluster --log-level debug || exit 1
 
@@ -365,12 +388,13 @@ create_ocp_sriov_port() {
     local tag="$2"
     local infraID="$3"
     local network="$4"
+    local instance="$5"
 
     #
     # Create an SRIOV port for the worker
     #
 
-    port_name="$infraID-worker-$worker_id-$network"
+    port_name="$infraID-worker-$worker_id-$network-$instance"
 
     openstack port show "$port_name" -c id -f value >/dev/null 2>&1 || (
         openstack port create "$port_name" --vnic-type direct --network "$network" \
@@ -441,10 +465,15 @@ create_ocp_worker_net() {
     #         )
     # )
     # SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
-    printf "Create %s...\n" "sriov port 1"
-    SRIOV_ID1=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_uplink")
-    printf "Create %s...\n" "sriov port 2"
-    SRIOV_ID2=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_downlink")
+    printf "Create %s...\n" "sriov uplink port 1"
+    SRIOV_UPLINK_ID1=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_uplink" "1")
+    printf "Create %s...\n" "sriov uplink port 2"
+    SRIOV_UPLINK_ID2=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_uplink" "2")
+
+    printf "Create %s...\n" "sriov downlink port 1"
+    SRIOV_DOWNLINK_ID1=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_downlink" "1")
+    printf "Create %s...\n" "sriov downlink port 2"
+    SRIOV_DOWNLINK_ID2=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_downlink" "2")
     #
     # Get the DPDK network uuid
     #
@@ -464,13 +493,21 @@ create_ocp_worker_net() {
         OS_PASSWORD=$(get_value_by_tag "$PROJECT_DIR/secure.yaml" ".clouds.openstack.auth.password")
         export OS_PASSWORD
 
-        # nova boot --image "$infraID-rhcos" --flavor ocp --user-data "$PROJECT_DIR/build-artifacts/worker.ign"\
-        #  --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_ID",tag=radio --nic net-id="$DPDK_ID",tag=uplink\
-        #   --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
-
-        openstack server create --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
-            --nic port-id="$SDN_ID" --nic port-id="$SRIOV_ID1" --nic port-id="$SRIOV_ID2" --nic net-id="$DPDK_ID" --nic net-id="$DPDK2_ID"\
-            --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+        if [[ "$NOVA_BOOT" =~ true ]]; then
+            nova boot --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
+                --nic port-id="$SDN_ID",tag=sdn\
+                --nic port-id="$SRIOV_UPLINK_ID1",tag=uplink --nic port-id="$SRIOV_UPLINK_ID2",tag=uplink\
+                --nic port-id="$SRIOV_DOWNLINK_ID1",tag=downlink --nic port-id="$SRIOV_DOWNLINK_ID2",tag=downlink\
+                --nic net-id="$DPDK_ID",tag=dpdk1 --nic net-id="$DPDK2_ID",tag=dpdk2\
+                --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+        else
+            openstack server create --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
+                --nic port-id="$SDN_ID" \
+                --nic port-id="$SRIOV_UPLINK_ID1" --nic port-id="$SRIOV_UPLINK_ID2" \
+                --nic port-id="$SRIOV_DOWNLINK_ID1" --nic port-id="$SRIOV_DOWNLINK_ID2" \
+                --nic net-id="$DPDK_ID" --nic net-id="$DPDK2_ID" \
+                --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+        fi
 
         # maps to
         # curl http://169.254.169.254/openstack/latest/meta_data.json
@@ -676,8 +713,10 @@ destroy() {
 
 VERBOSE="false"
 export VERBOSE
+NOVA_BOOT="false"
+export NOVA_BOOT
 
-while getopts ":hvo:d" opt; do
+while getopts ":hvo:dn" opt; do
     case ${opt} in
     o)
         out_dir=$OPTARG
@@ -692,9 +731,11 @@ while getopts ":hvo:d" opt; do
         usage
         exit 0
         ;;
+    n)
+        NOVA_BOOT="true"
+        ;;
     \?)
-        echo "Invalid Opti
-        on: -$OPTARG" 1>&2
+        echo "Invalid Option: -$OPTARG" 1>&2
         exit 1
         ;;
     esac

@@ -1,0 +1,68 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: "testpmd-app"
+  namespace: "nfv"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: testpmd
+  template:
+    metadata:
+      labels:
+        app: testpmd
+    spec:
+      nodeSelector:
+        examplecnf.openshift.io/testpmd: ""
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: testpmd
+      containers:
+      - name: testpmd
+        command: ["sleep", "99999"]
+        # args:
+        # - "--socket-mem 1024"
+        # - "-n 4"
+        # - "--proc-type auto"
+        # - "--file-prefix pg"
+        # - "--"
+        # - "--disable-rss"
+        # - "--nb-cores=2"
+        # - "--rxq=1"
+        # - "--txq=1"
+        # - "--rxd=1024"
+        # - "--txd=1024"
+        # - "--auto-start"
+        # - "--eth-peer=0,fe:54:00:80:a5:a8"
+        # - "--eth-peer=1,fe:54:00:80:a5:a9"
+        # - "--forward-mode=mac"
+        lifecycle:
+          preStop:
+            exec:
+              command: ["testpmd-check-wait"]
+        image: dockerfranck/testpmd
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["IPC_LOCK", "NET_ADMIN"]
+        resources:
+          limits:
+            hugepages-1Gi: 4Gi
+            memory: 1000Mi
+            cpu: "4"
+            openshift.io/intelnics_radio_downlink: "1"
+            openshift.io/intelnics_radio_uplink: "1"
+          requests:
+            hugepages-1Gi: 4Gi
+            memory: 1000Mi
+            cpu: "4"
+            openshift.io/intelnics_radio_downlink: "1"
+            openshift.io/intelnics_radio_uplink: "1"
+        volumeMounts:
+        - name: hugepage
+          mountPath: /dev/hugepages
+      volumes:
+      - name: hugepage
+        emptyDir:
+          medium: HugePages

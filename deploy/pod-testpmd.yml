@@ -14,17 +14,18 @@ spec:
     command: ["sleep", "99999"]
     image: dockerfranck/testpmd
     securityContext:
+     capabilities:
         privileged: true
     resources:
       requests:
-        openshift.io/intelnics_radio_downlink: "1"
-        openshift.io/intelnics_radio_uplink: "1"
+        openshift.io/intelnics_radio_downlink: "2"
+        openshift.io/intelnics_radio_uplink: "2"
         memory: 1000Mi
         hugepages-1Gi: 2Gi
         cpu: '1'
       limits:
-        openshift.io/intelnics_radio_downlink: "1"
-        openshift.io/intelnics_radio_uplink: "1"
+        openshift.io/intelnics_radio_downlink: "2"
+        openshift.io/intelnics_radio_uplink: "2"
         hugepages-1Gi: 2Gi
         cpu: '1'
         memory: 1000Mi

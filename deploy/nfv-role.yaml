@@ -1,0 +1,53 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: testpmd
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - '*'
+- apiGroups:
+  - k8s.cni.cncf.io
+  resources:
+  - '*'
+  - NetworkAttachmentDefinition
+  verbs:
+  - '*'
+- apiGroups:
+    - security.openshift.io
+  resourceNames:
+    - privileged
+  resources:
+    - securitycontextconstraints
+  verbs:
+    - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trex
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - '*'
+- apiGroups:
+  - k8s.cni.cncf.io
+  resources:
+  - '*'
+  - NetworkAttachmentDefinition
+  verbs:
+  - '*'
+- apiGroups:
+    - security.openshift.io
+  resourceNames:
+    - privileged
+  resources:
+    - securitycontextconstraints
+  verbs:
+    - use
