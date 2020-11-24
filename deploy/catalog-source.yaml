@@ -1,0 +1,13 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: aarons-operators
+  namespace: openshift-marketplace
+spec:
+  displayName: Aaron's Operators
+  image: quay.io/aasmith/sriov-catalog:latest
+  publisher: aasmith
+  sourceType: grpc
+  updateStrategy:
+    registryPoll:
+      interval: 30m
