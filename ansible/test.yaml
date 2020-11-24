@@ -1,0 +1,67 @@
+- import_playbook: common.yaml
+
+- hosts: all
+  gather_facts: no
+
+  tasks:
+  - name: Build worker list
+    set_fact:       
+      worker_list: "{{ worker_list | default([]) + [ os_compute_server_name + '-' + index | string ] }}"
+    loop: "{{ range(os_compute_nodes_number) | list }}"
+    loop_control:
+      index_var: index
+
+  # - debug:
+  #     var: worker_list
+
+  # - name: sh
+  #   set_fact:
+  #     count_list: "{{ count_list | default([]) + [ range(item.count | default(1)) | list ] }}"
+  #   loop: "{{ additionalNetworks }}"
+
+  # - debug:
+  #     var: count_list
+  
+  # - name: looping
+  #   ansible.builtin.debug:
+  #     msg: "{{ os_compute_server_name }}-{{ item[0][0] }}-{{ item[0][1].uuid | regex_search('([^-]+)')  }}"
+  #   loop: "{{ range(os_compute_nodes_number) | product(additionalNetworks) | list }}"
+
+  - name: Validate additionalNetworks
+    set_fact:       
+      port_list: "{{ port_list | default([]) + [ { 
+                      'worker' : item[0], 
+                      'uuid' : item[1].uuid, 
+                      'tag' : item[1].tag | default(''),
+                      'type' : item[1].type|default('normal'),
+                      'name' : item[1].name|default(item[1].uuid),
+                      } ] * item[1].count|default(1) }}"
+    loop: "{{ additionalNetworks }}"
+
+  - name: Build port list
+    set_fact:       
+      port_list: "{{ port_list | default([]) + [ { 
+                      'worker' : item[0], 
+                      'uuid' : item[1].uuid, 
+                      'tag' : item[1].tag | default(''),
+                      'type' : item[1].type|default('normal'),
+                      'name' : item[1].name|default(item[1].uuid),
+                      } ] * item[1].count|default(1) }}"
+    loop: "{{ worker_list | product(additionalNetworks) |  list }}"
+    loop_control:
+      index_var: index
+
+  - debug:
+      var: port_list
+
+  # - name: with_nested
+  #   set_fact:
+  #     ll: "{{ ll | default([]) + [item] * item.count }}"
+  #   with_items: "{{ port_list }}"
+
+  # - debug:
+  #     var: ll
+
+  # - name: with_nested
+  #   ansible.builtin.debug:
+  #     msg: "{{ port_list * 2 }}"

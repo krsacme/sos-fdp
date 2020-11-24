@@ -1,0 +1,17 @@
+---
+additionalNetworks:
+  - uuid: ea24bd04-8674-4f69-b0ee-fa0b3bd20509
+    count: 2
+    type: sriov
+    name: downlink_network
+    tag: downlink
+  - uuid: 22300314-3743-4e7a-8f87-f73a9d39cef4
+    count: 2
+    type: sriov
+    tag: uplink
+  - uuid: 863b5c10-3f21-4b0d-a3d1-2e20c1b6997d
+    tag: uplink1
+    name: uplink1_network
+  - uuid: 90f783e0-a793-47ab-89c9-f47d27021169
+    type: normal
+    tag: uplink2
