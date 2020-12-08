@@ -6,9 +6,8 @@ all:
 
       # User-provided values
       os_subnet_range: '10.0.0.0/16'
-      os_flavor_master: 'm1.xlarge'
-      os_flavor_worker: 'm1.large'
-      os_image_rhcos: 'rhcos'
+      os_flavor_master: 'ocp'
+      os_flavor_worker: 'ocp-worker'
       # Service subnet cidr
       svc_subnet_range: '172.30.0.0/16'
       os_svc_network_range: '172.30.0.0/15'
@@ -26,24 +25,24 @@ all:
 
       # Number of provisioned Compute nodes.
       # 3 is the minimum number for a fully-functional cluster.
-      os_compute_nodes_number: 3
+      os_compute_nodes_number: 2
 
       # The public network providing connectivity to the cluster. If not
       # provided, the cluster external connectivity must be provided in another
       # way.
       #
       # Required for os_api_fip, os_ingress_fip, os_bootstrap_fip.
-      os_external_network: 'external'
+      os_external_network: 'public'
 
       # OpenShift API floating IP address. If this value is non-empty, the
       # corresponding floating IP will be attached to the Control Plane to
       # serve the OpenShift API.
-      os_api_fip: '203.0.113.23'
+      os_api_fip: '192.168.122.150'
 
       # OpenShift Ingress floating IP address. If this value is non-empty, the
       # corresponding floating IP will be attached to the worker nodes to serve
       # the applications.
-      os_ingress_fip: '203.0.113.19'
+      os_ingress_fip: '192.168.122.151'
 
       # If this value is non-empty, the corresponding floating IP will be
       # attached to the bootstrap machine. This is needed for collecting logs

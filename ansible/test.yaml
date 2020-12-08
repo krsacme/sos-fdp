@@ -3,6 +3,9 @@
 - hosts: all
   gather_facts: no
 
+  vars:
+    pstate: "{{ state | default('present' )}}"
+
   tasks:
   - name: Build worker list
     set_fact:       
@@ -11,57 +14,97 @@
     loop_control:
       index_var: index
 
-  # - debug:
-  #     var: worker_list
+  - name: 'Create the Compute ports'
+    os_port:
+      state: "{{ pstate }}"
+      name: "{{ item }}-{{ index }}"
+      network: "{{ os_network }}"
+      security_groups:
+      - "{{ os_sg_worker }}"
+      allowed_address_pairs:
+      - ip_address: "{{ os_ingressVIP }}"
+    loop: "{{ [os_port_worker] * os_compute_nodes_number }}"
+    loop_control:
+      index_var: index
+    register: ports
 
-  # - name: sh
-  #   set_fact:
-  #     count_list: "{{ count_list | default([]) + [ range(item.count | default(1)) | list ] }}"
-  #   loop: "{{ additionalNetworks }}"
+  - name: 'Set Compute ports tag'
+    command:
+      cmd: "openstack port set --tag {{ cluster_id_tag }} {{ item }}-{{ index }}"
+    loop: "{{ [os_port_worker] * os_compute_nodes_number }}"
+    loop_control:
+      index_var: index
+    when: pstate == 'present'
 
-  # - debug:
-  #     var: count_list
-  
-  # - name: looping
-  #   ansible.builtin.debug:
-  #     msg: "{{ os_compute_server_name }}-{{ item[0][0] }}-{{ item[0][1].uuid | regex_search('([^-]+)')  }}"
-  #   loop: "{{ range(os_compute_nodes_number) | product(additionalNetworks) | list }}"
+  - name: Verify additionalNetworks
+    os_networks_info:
+      name: "{{ item.id }}"
+    loop: "{{ additionalNetworks }}"
+    register: result
 
-  # - name: Validate additionalNetworks
-  #   set_fact:       
-  #     port_list: "{{ port_list | default([]) + [ { 
-  #                     'worker' : item[0], 
-  #                     'uuid' : item[1].uuid, 
-  #                     'tag' : item[1].tag | default(''),
-  #                     'type' : item[1].type|default('normal'),
-  #                     'name' : item[1].name|default(item[1].uuid),
-  #                     } ] * item[1].count|default(1) }}"
-  #   loop: "{{ additionalNetworks }}"
-
-  # - debug:
-  #     var: port_list
+  # - name: Show openstack networks
+  #   debug:
+  #     msg: "{{ result.results[0].openstack_networks[0].id }}"
 
   - name: Build port and port index list
     set_fact:
       port_list: "{{ port_list | default([]) + [ { 
-                      'worker' : item[0], 
-                      'uuid' : item[1].id, 
-                      'type' : item[1].type|default('normal')
-                      } ] * item[1].count|default(1) }}"
-      index_list: "{{ index_list | default([]) + range(item[1].count|default(1)) | list }}"
-    loop: "{{ worker_list | product(additionalNetworks) |  list }}"
+                      'net_name' : item.id,
+                      'uuid' : result.results[index].openstack_networks[0].id, 
+                      'type' : item.type|default('normal')
+                      } ] * item.count|default(1) }}"
+      index_list: "{{ index_list | default([]) + range(item.count|default(1)) | list }}"
+    loop: "{{ additionalNetworks }}"
     loop_control:
       index_var: index
 
-  - debug:
-      var: port_list
-
-  - name: Create ports
-    os_port:
-      name:  "{{ item.worker }}-{{ item.uuid | regex_search('([^-]+)') }}-{{index_list[index]|string }}"
-      network: "{{ item.uuid }}" 
-      state: absent
-      security_groups: "{{ os_sg_worker if item.type == 'normal' else omit }}"
+  - name: Save port name
+    set_fact:
+      port_name_list: "{{ port_name_list | default([]) + [ item | combine( {'name' : item.uuid | regex_search('([^-]+)') + '-' + index_list[index]|string } ) ] }}" 
     loop: "{{ port_list }}"
+    loop_control:
+      index_var: index
+
+  - name: debug
+    debug:
+      var: port_name_list
+  
+  - name: Create additionalNetworks ports
+    os_port:
+      name:  "{{ item[0] }}-{{ item[1].name }}"
+      vnic_type: "{{ item[1].type }}"
+      network: "{{ item[1].uuid }}" 
+      state: "{{ pstate }}"
+      security_groups: "{{ os_sg_worker if item[1].type == 'normal' else omit }}"
+    loop: "{{ worker_list | product(port_name_list) | list }}"
+    loop_control:
+      index_var: index
+
+  - name: 'Set additionalNetworks ports tag'
+    command:
+      cmd: "openstack port set --tag {{ cluster_id_tag }} {{ item[0] }}-{{ item[1].name }}"
+    loop: "{{ worker_list | product(port_name_list) | list }}"
+    when: pstate == 'present' 
+
+  - name: Build nic list
+    set_fact:
+      nic_list: "{{ nic_list | default([]) + [ item.name ] }}"
+    loop: "{{ port_name_list }}"
+
+  # - name: Show openstack networks
+  #   debug:
+  #     msg: "{{ ['fdp-nz995-worker-0'] | product(nic_list) | map('join','-') | map('regex_replace', '(.*)', 'port-name=\\1') | list + ['fdp']}}"
+
+  - name: 'Create the Compute servers'
+    os_server:
+      state: "{{ pstate }}"
+      name: "{{ item }}"
+      image: "{{ os_image_rhcos }}"
+      flavor: "{{ os_flavor_worker }}"
+      auto_ip: no
+      userdata: "{{ lookup('file', os_user_data) | string }}"
+      nics:  "{{ [item] | product(nic_list) | map('join','-') | map('regex_replace', '(.*)', 'port-name=\\1') | list + [ 'port-name=' + item ] }}"
+      config_drive: yes
+    loop: "{{ worker_list }}"
     loop_control:
       index_var: index
