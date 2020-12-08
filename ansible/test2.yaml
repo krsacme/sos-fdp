@@ -1,0 +1,24 @@
+- import_playbook: common.yaml
+
+- hosts: all
+  gather_facts: no
+
+  tasks:
+  - name: Gather information about images
+    os_image_info:
+      cloud: "openstack"
+    register: result
+
+  - name: Show openstack networks
+    debug:
+      msg: "{{ result.openstack_image }}"
+
+  - name: Gather information about a previously created network by name
+    os_networks_info:
+      cloud: "openstack"
+      name: "radio_uplink"
+    register: result
+
+  - name: Show openstack networks
+    debug:
+      msg: "{{ result.openstack_networks[0].id }}"
