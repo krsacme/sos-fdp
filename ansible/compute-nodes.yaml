@@ -13,19 +13,36 @@
   tasks:
   - name: 'Create the Compute ports'
     os_port:
-      name: "{{ item.1 }}-{{ item.0 }}"
+      name: "{{ item }}-{{ index }}"
       network: "{{ os_network }}"
       security_groups:
       - "{{ os_sg_worker }}"
       allowed_address_pairs:
       - ip_address: "{{ os_ingressVIP }}"
-    with_indexed_items: "{{ [os_port_worker] * os_compute_nodes_number }}"
+    loop: "{{ [os_port_worker] * os_compute_nodes_number }}"
+    loop_control:
+      index_var: index
     register: ports
 
   - name: 'Set Compute ports tag'
     command:
-      cmd: "openstack port set --tag {{ cluster_id_tag }} {{ item.1 }}-{{ item.0 }}"
-    with_indexed_items: "{{ [os_port_worker] * os_compute_nodes_number }}"
+      cmd: "openstack port set --tag {{ cluster_id_tag }} {{ item }}-{{ index }}"
+    loop: "{{ [os_port_worker] * os_compute_nodes_number }}"
+    loop_control:
+      index_var: index
+
+  - name: Build port list
+    set_fact:       
+      port_list: "{{ port_list | default([]) + [ { 
+                      'worker' : item[0], 
+                      'uuid' : item[1].uuid, 
+                      'tag' : item[1].tag | default(''),
+                      'type' : item[1].type|default('normal'),
+                      'name' : item[1].name|default(item[1].uuid),
+                      } ] * item[1].count|default(1) }}"
+    loop: "{{ worker_list | product(additionalNetworks) |  list }}"
+    loop_control:
+      index_var: index
 
   - name: 'List the Compute Trunks'
     command:
@@ -41,13 +58,30 @@
     - os_networking_type == "Kuryr"
     - "os_compute_trunk_name|string not in compute_trunks.stdout"
 
-  - name: 'Create the Compute servers'
-    os_server:
-      name: "{{ item.1 }}-{{ item.0 }}"
-      image: "{{ os_image_rhcos }}"
-      flavor: "{{ os_flavor_worker }}"
-      auto_ip: no
-      userdata: "{{ lookup('file', 'worker.ign') | string }}"
-      nics:
-      - port-name: "{{ os_port_worker }}-{{ item.0 }}"
-    with_indexed_items: "{{ [os_compute_server_name] * os_compute_nodes_number }}"
+  - name: 'Create the Compute Workers'
+    shell: >
+      nova boot --image "{{ $infraID }}-rhcos"
+        --flavor "{{ os_flavor_worker }}"
+        --user-data $PROJECT_DIR/build-artifacts/worker.ign
+        --nic port-id=$SDN_ID,tag=sdn
+        --nic port-id=$SRIOV_UPLINK_ID1,tag=uplink 
+        --nic port-id=$SRIOV_UPLINK_ID2,tag=uplink
+        --nic port-id=$SRIOV_DOWNLINK_ID1,tag=downlink 
+        --nic port-id=$SRIOV_DOWNLINK_ID2,tag=downlink
+        --nic net-id=$DPDK_ID,tag=dpdk1 
+        --nic net-id=$DPDK2_ID,tag=dpdk2
+        --config-drive true 
+        worker-$worker_id.$cluster_name.$cluster_domain
+    with_indexed_items: 
+      - "{{ [os_compute_server_name] * os_compute_nodes_number }}"
+
+  # - name: 'Create the Compute servers'
+  #   os_server:
+  #     name: "{{ item.1 }}-{{ item.0 }}"
+  #     image: "{{ os_image_rhcos }}"
+  #     flavor: "{{ os_flavor_worker }}"
+  #     auto_ip: no
+  #     userdata: "{{ lookup('file', 'worker.ign') | string }}"
+  #     nics:
+  #     - port-name: "{{ os_port_worker }}-{{ item.0 }}"
+  #   with_indexed_items: "{{ [os_compute_server_name] * os_compute_nodes_number }}"

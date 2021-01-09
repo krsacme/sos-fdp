@@ -12,6 +12,8 @@ clouds:
       username: "admin"
       project_name: "admin"
       user_domain_name: "Default"
+      project_domain_name: "Default"
+      auth_url: "http://192.168.122.103:5000"
     region_name: "regionOne"
     interface: "public"
     identity_api_version: 3

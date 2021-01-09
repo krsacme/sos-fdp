@@ -1,11 +1,11 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
-  name: openshift-sriov-network-operator
-  namespace: openshift-sriov-network-operator
+  name: origin-sriov-network-operator
+  namespace: origin-sriov-network-operator
 spec:
   channel: stable
   installPlanApproval: Automatic
-  name: aaron-sriov-network-operator
-  source: aarons-operators
-  sourceNamespace: openshift-marketplace
+  name: origin-sriov-network-operator
+  source: origin-operators
+  sourceNamespace: origin-marketplace

@@ -1,0 +1,11 @@
+{
+    "clusterName": "fdp",
+    "clusterID": "01b8eeba-decc-4253-9e21-21908eb6378e",
+    "infraID": "fdp-nz995",
+    "openstack": {
+        "cloud": "openstack",
+        "identifier": {
+            "openshiftClusterID": "fdp-nz995"
+        }
+    }
+}
