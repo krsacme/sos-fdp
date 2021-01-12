@@ -147,7 +147,7 @@ deploy_cluster() {
     # Assume $BUILD_DIR has been freshly created and empty
     #
     cd "$BUILD_DIR" || return 1
-
+    
     if ! openshift-install create ignition-configs --log-level debug; then
         printf "Error: failed to create ignition configs!"
         return 1
@@ -155,6 +155,7 @@ deploy_cluster() {
 
     # Save the ignition artifacts
     #
+    mkdir -p "$ARTIFACTS_DIR" || return 1
     cp ./*.ign "$ARTIFACTS_DIR" || return 1
     cp metadata.json "$ARTIFACTS_DIR" || return 1
 
@@ -264,8 +265,8 @@ prepare_openstack() {
         }
     }
 
-    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.lbFloatingIP") || {
-        printf "Could not access .platform.openstack.lbFloatingIP\n"
+    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiFloatingIP") || {
+        printf "Could not access .platform.openstack.apiFloatingIP\n"
         exit 1
     }
 
@@ -539,7 +540,9 @@ EOF
 }
 
 create_deploy() {
-    [ -d "$BUILD_DIR" ] || mkdir "$BUILD_DIR"
+    [ -d "$BUILD_DIR" ] && rm -rf "$BUILD_DIR"
+
+    mkdir "$BUILD_DIR"
 
     if [ ! -e "$PROJECT_DIR/clouds.yaml" ]; then
         echo "Error: missing $PROJECT_DIR/clouds.yaml file!"
@@ -652,6 +655,10 @@ deploy() {
     [ -z "$command" ] && command="cluster"
 
     case $command in
+    cluster-only)
+        create_deploy
+        manage_cluster "deploy"
+        ;;
     cluster)
         create_deploy
         prepare_openstack

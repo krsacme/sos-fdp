@@ -7,7 +7,7 @@ spec:
   deviceType: vfio-pci
   nicSelector:
     deviceID: 154c
-    netFilter: openstack/NetworkID:22300314-3743-4e7a-8f87-f73a9d39cef4
+    netFilter: openstack/NetworkID:${NET_ID}
   nodeSelector:
     feature.node.kubernetes.io/network-sriov.capable: 'true'
   numVfs: 1
