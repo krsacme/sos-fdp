@@ -4,8 +4,15 @@ metadata:
   name: sriov-downlink
   namespace: openshift-sriov-network-operator
 spec:
-  ipam: |
+  ipam: |-
     {
+      "ipam": {
+        "type": "host-local",
+        "subnet": "192.0.3.0/24",
+        "rangeStart": "192.0.3.100",
+        "rangeEnd": "192.0.3.150",
+        "gateway": "192.0.3.1"
+      }
     }
   linkState: auto
   networkNamespace: nfv

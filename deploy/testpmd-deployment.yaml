@@ -13,6 +13,7 @@ spec:
       labels:
         app: testpmd
     spec:
+      # PCIDEVICE_OPENSHIFT_IO_INTELNICS_RADIO_UPLINK=0000:00:09.0
       nodeSelector:
         examplecnf.openshift.io/testpmd: ""
       terminationGracePeriodSeconds: 30
@@ -36,12 +37,13 @@ spec:
         # - "--eth-peer=0,fe:54:00:80:a5:a8"
         # - "--eth-peer=1,fe:54:00:80:a5:a9"
         # - "--forward-mode=mac"
-        lifecycle:
-          preStop:
-            exec:
-              command: ["testpmd-check-wait"]
-        image: dockerfranck/testpmd
-        imagePullPolicy: IfNotPresent
+        # lifecycle:
+        #   preStop:
+        #     exec:
+        #       command: ["testpmd-check-wait"]
+#        image: dockerfranck/testpmd
+        image: quay.io/aasmith/testpmd:latest
+        imagePullPolicy: Always
         securityContext:
           privileged: true
           capabilities:
@@ -50,13 +52,13 @@ spec:
           limits:
             hugepages-1Gi: 4Gi
             memory: 1000Mi
-            cpu: "4"
+            cpu: "2"
             openshift.io/intelnics_radio_downlink: "1"
             openshift.io/intelnics_radio_uplink: "1"
           requests:
             hugepages-1Gi: 4Gi
             memory: 1000Mi
-            cpu: "4"
+            cpu: "2"
             openshift.io/intelnics_radio_downlink: "1"
             openshift.io/intelnics_radio_uplink: "1"
         volumeMounts:

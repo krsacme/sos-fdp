@@ -1,6 +1,7 @@
 #!/bin/bash
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATES_DIR="$PROJECT_DIR/templates"
 BUILD_DIR="$PROJECT_DIR/build"
 ARTIFACTS_DIR="$PROJECT_DIR/build-artifacts"
 
@@ -17,6 +18,11 @@ WORKER_SRIOV_IP_OFFSET=${WORKER_SRIOV_IP_OFFSET:-"10"}
 INGRESS_FIP=${INGRESS_FIP:-"192.168.122.151"}
 
 WORKER_FLAVOR="ocp-worker"
+
+declare -a install_manifests=(
+    "${PROJECT_DIR}/deploy/20-mount-config.yaml" 
+    "${PROJECT_DIR}/deploy/99-vfio-noiommu.yaml"
+    "${PROJECT_DIR}/deploy/prom_ret.yaml")
 
 # declare -a networks=("radio_up 192.0.2.0/24 sriov"
 #     "radio_down 192.0.3.0/24 sriov"
@@ -36,6 +42,10 @@ usage() {
             prep-osp  -- Create all resources needed to deploy (called by deploy cluster as well)
             patch-ocp -- After a successful deployment, scale to one node
             prep-ocp  -- Get OCP ready for adding worker nodes (also called by deploy workers index)
+            label-nodes -- Label worker nodes for sriov
+            deploy-operator sriov-operator-repo-dir -- Deploy the sriov operator 
+            pull-secret namespace -- Create a pull secret for quay.io
+            
     Options
             You really have no other options :)
             -h  -- Print this usage and exit.
@@ -53,6 +63,12 @@ EOM
     exit 0
 }
 
+install_manifests() {
+    for file in  "${install_manifests[@]}";
+    do
+        oc apply -f "${file}"
+    done
+}
 # parse_yaml() {
 #     local file="$1"
 
@@ -143,11 +159,44 @@ function apply_auth_hack() {
     oc patch authentications.operator.openshift.io cluster -p='{"spec": {"unsupportedConfigOverrides": {"useUnsupportedUnsafeNonHANonProductionUnstableOAuthServer": true}}}' --type=merge
 }
 
+gen_chrony_mc() {
+    read -r -d '' content <<EOF
+server _gateway iburst
+server infoblox-trust01.intranet.prod.int.phx2.redhat.com iburst
+server clock01.util.phx2.redhat.com iburst
+server clock.bos.redhat.com iburst
+server clock1.rdu2.redhat.com iburst
+server clock02.util.phx2.redhat.com iburst
+driftfile /var/lib/chrony/drift
+makestep 1.0 3
+rtcsync
+logdir /var/log/chrony
+EOF
+
+    gen_machineconfig "master" "0420" "/etc/chrony.conf" "masters-chrony-configuration" "$content" || exit 1
+}
+
 deploy_cluster() {
     # Assume $BUILD_DIR has been freshly created and empty
     #
     cd "$BUILD_DIR" || return 1
-    
+
+    printf "Generate manifests...\n" 
+    if ! openshift-install --log-level debug create manifests >/dev/null; then
+        printf "%s create manifests failed!\n" "openshift-install"
+        exit 1
+    fi
+
+    printf "Generate chrony config...\n" 
+    # Generate MachineConfig for chrony config
+    gen_chrony_mc
+
+    # Install extra manifests
+    for file in "${install_manifests[@]}"; do
+        cp "${file}" ./manifests || exit 1
+    done
+
+    printf "Generate ignition files...\n" 
     if ! openshift-install create ignition-configs --log-level debug; then
         printf "Error: failed to create ignition configs!"
         return 1
@@ -160,10 +209,12 @@ deploy_cluster() {
     cp metadata.json "$ARTIFACTS_DIR" || return 1
 
     apply_auth_hack &
+    printf "Apply bootstrap etcd hack for single master...\n" 
     apply_bootstrap_etcd_hack &
 
     openshift-install create cluster --log-level debug || exit 1
 
+    printf "Create ingress fip...\n" 
     create_ingress_fip
 }
 
@@ -496,11 +547,7 @@ create_ocp_worker_net() {
 
         if [[ "$NOVA_BOOT" =~ true ]]; then
             nova boot --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
-                --nic port-id="$SDN_ID",tag=sdn\
-                --nic port-id="$SRIOV_UPLINK_ID1",tag=uplink --nic port-id="$SRIOV_UPLINK_ID2",tag=uplink\
-                --nic port-id="$SRIOV_DOWNLINK_ID1",tag=downlink --nic port-id="$SRIOV_DOWNLINK_ID2",tag=downlink\
-                --nic net-id="$DPDK_ID",tag=dpdk1 --nic net-id="$DPDK2_ID",tag=dpdk2\
-                --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+                --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_UPLINK_ID1",tag=uplink --nic port-id="$SRIOV_UPLINK_ID2",tag=uplink --nic port-id="$SRIOV_DOWNLINK_ID1",tag=downlink --nic port-id="$SRIOV_DOWNLINK_ID2",tag=downlink --nic net-id="$DPDK_ID",tag=dpdk1 --nic net-id="$DPDK2_ID",tag=dpdk2 --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
         else
             openstack server create --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
                 --nic port-id="$SDN_ID" \
@@ -657,6 +704,7 @@ deploy() {
     case $command in
     cluster-only)
         create_deploy
+        prepare_for_ocp_worker
         manage_cluster "deploy"
         ;;
     cluster)
@@ -666,11 +714,12 @@ deploy() {
         ;;
     workers)
         if [ ${#args[@]} -lt 2 ]; then
-            printf "Error: Missing worker id for deploy workers!\n"
+            printf "Error: Missing Ansible UPI repo for deploy workers!\n"
             usage
         fi
         prepare_for_ocp_worker
-        create_ocp_worker_net "${args[1]}"
+        deploy_workers "${args[1]}"
+#        create_ocp_worker_net "${args[1]}"
         ;;
     *)
         printf "Unknown deploy sub command %s!\n" "$command"
@@ -716,6 +765,105 @@ destroy() {
         exit 1
         ;;
     esac
+}
+
+label_nodes() {
+    local l="$1"
+
+    workers=$(oc get nodes -ojson | jq -r '.items[].metadata.labels."kubernetes.io/hostname"' | grep worker)
+
+    for w in $workers; do
+        echo oc label node "$w" "$l"
+        oc label node "$w" "$l"
+    done
+}
+
+deploy_workers() {
+    repo="$1"
+
+    pushd "$repo" || ( echo "$repo does not exists" && exit )
+
+    cp "$PROJECT_DIR/build-artifacts/metadata.json" . || exit 1
+    cp "$PROJECT_DIR/build-artifacts/worker.ign" . || exit 1
+
+    image=$(openstack image list -c Name -f value)
+
+    ansible-playbook -i inventory.yaml --extra-vars "os_image_rhcos=${image}" compute-nodes.yaml
+}
+
+deploy_operator() {
+    repo="$1"
+
+    oc apply -f deploy/namespace.yaml
+
+    oc project openshift-sriov-network-operator
+
+    pushd "$repo" || ( echo "$repo does not exists" && exit )
+
+    for file in manifests/4.7/sriov-network-operator-sriov*
+    do
+        oc apply -f "$file"
+    done
+
+    hack/deploy-setup.sh openshift-sriov-network-operator
+
+    printf "Wait for webhook to start\n"
+
+    for i in {1..10}
+    do
+        sleep 5
+        printf "%d\n" "$i"
+        if oc get pods | grep webhook; then
+            break;
+        fi
+    done
+
+    oc patch sriovoperatorconfig default --type=merge \
+        -n openshift-sriov-network-operator \
+        --patch '{ "spec": { "enableOperatorWebhook": false } }'
+
+    label_nodes feature.node.kubernetes.io/network-sriov.capable="true"
+
+    popd || exit
+}
+
+deploy_policy() {
+    NET_ID=$(openstack network show radio_downlink -c id -f value)
+    export NET_ID
+    envsubst <deploy/nodepolicy-radio-downlink.yaml | oc apply -f -
+    NET_ID=$(openstack network show radio_uplink -c id -f value)
+    envsubst <deploy/nodepolicy-radio-uplink.yaml | oc apply -f -
+}
+
+create_pull_secret() {
+    nspace="$1"
+
+    oc create secret generic quay-pull-secret --from-file=.dockerconfigjson=/home/kni/.docker/config.json --type=kubernetes.io/dockerconfigjson -n "$nspace"
+    oc secrets link default quay-pull-secret --for=pull -n "$nspace"
+}
+
+gen_machineconfig() {
+    local role="$1"
+    local mode="$2"
+    local path="$3"
+    local metadata_name="$4"
+    local content="$5"
+
+    mkdir -p "$BUILD_DIR/openshift-patches"
+
+    content=$(echo "$content" | base64 -w0)
+
+    template="$TEMPLATES_DIR/machineconfig.yaml.tpl"
+    if [ ! -f "$template" ]; then
+        printf "Template \"%s\" does not exist!\n" "$template"
+        exit 1
+    fi
+    export metadata_name path mode content role
+
+    manifest="$BUILD_DIR/openshift-patches/$metadata_name.yaml"
+    envsubst <"${template}" >"${manifest}"
+
+    cp "$BUILD_DIR/openshift-patches/$metadata_name.yaml" ./openshift || exit 1
 }
 
 VERBOSE="false"
@@ -787,11 +935,34 @@ prep-ocp)
     prepare_for_ocp_worker
     ;;
 csr)
-    approve_csr
-    approve_csr
+    sign_csr
     ;;
 clean)
     rm -rf "$BUILD_DIR"
+    ;;
+label-nodes)
+    label_nodes feature.node.kubernetes.io/network-sriov.capable="true"
+    ;;
+deploy-operator)
+    if [ "$#" -lt 1 ]; then
+        usage
+    fi
+    deploy_operator "$1"
+    ;;
+deploy-policy)
+    deploy_policy
+    ;;
+pull-secret)
+    if [ "$#" -lt 1 ]; then
+        usage
+    fi
+    create_pull_secret "$1"
+    ;;
+install-manifests)
+    install_manifests
+    ;;
+ingress-fip)
+    create_ingress_fip
     ;;
 *)
     echo "Unknown command: $COMMAND"
