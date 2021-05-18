@@ -1,5 +1,10 @@
 #!/bin/bash
 
+SRIOV_NW_UP=${SRIOV_NW_UP:-"sriov2"}
+SRIOV_NW_DN=${SRIOV_NW_DN:-"sriov2"}
+VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"508"}
+VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"509"}
+
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$PROJECT_DIR/templates"
 BUILD_DIR="$PROJECT_DIR/build"
@@ -101,8 +106,8 @@ nthhost() {
     address="$1"
     nth="$2"
 
-    mapfile -t ips < <(nmap -n -sL "$address" 2>&1 | awk '/Nmap scan report/{print $NF}')
-    #ips=($(nmap -n -sL "$address" 2>&1 | awk '/Nmap scan report/{print $NF}'))
+    #mapfile -t ips < <(nmap -n -sL "$address" 2>&1 | awk '/Nmap scan report/{print $NF}')
+    ips=($(nmap -n -sL "$address" 2>&1 | awk '/Nmap scan report/{print $NF}'))
     ips_len="${#ips[@]}"
 
     if [ "$ips_len" -eq 0 ] || [ "$nth" -gt "$ips_len" ]; then
@@ -182,7 +187,7 @@ deploy_cluster() {
     cd "$BUILD_DIR" || return 1
 
     printf "Generate manifests...\n" 
-    if ! openshift-install --log-level debug create manifests >/dev/null; then
+    if ! openshift-install --log-level debug create manifests ; then
         printf "%s create manifests failed!\n" "openshift-install"
         exit 1
     fi
@@ -207,6 +212,8 @@ deploy_cluster() {
     mkdir -p "$ARTIFACTS_DIR" || return 1
     cp ./*.ign "$ARTIFACTS_DIR" || return 1
     cp metadata.json "$ARTIFACTS_DIR" || return 1
+
+    trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 
     apply_auth_hack &
     printf "Apply bootstrap etcd hack for single master...\n" 
@@ -302,7 +309,7 @@ prepare_openstack() {
 
     printf "Create ocp flavor %s...\n" "$masterFlavor"
     openstack flavor show "$masterFlavor" >/dev/null 2>&1 || {
-        openstack flavor create --ram 24576 --disk 25 --vcpus 12 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$masterFlavor" || {
+        openstack flavor create --ram 12288 --disk 25 --vcpus 6 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$masterFlavor" || {
             printf "Failed to create ocp flavor.."
             exit 1
         }
@@ -310,16 +317,17 @@ prepare_openstack() {
 
     printf "Create ocp flavor %s...\n" "$WORKER_FLAVOR"
     openstack flavor show "$WORKER_FLAVOR" >/dev/null 2>&1 || {
-        openstack flavor create --ram 16384 --disk 25 --vcpus 8 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$WORKER_FLAVOR" || {
+        openstack flavor create --ram 12288 --disk 25 --vcpus 6 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$WORKER_FLAVOR" || {
             printf "Failed to create ocp flavor.."
             exit 1
         }
     }
 
-    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiFloatingIP") || {
-        printf "Could not access .platform.openstack.apiFloatingIP\n"
-        exit 1
-    }
+    # KRS commented
+    #lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiFloatingIP") || {
+    #    printf "Could not access .platform.openstack.apiFloatingIP\n"
+    #    exit 1
+    #}
 
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
@@ -394,8 +402,9 @@ create_network() {
     local tag="$2"
     local cidr="$3"
     local net_type="$4"
+    local vlan_id="$5"
 
-    params=(--provider-physical-network radio --provider-network-type vlan)
+    params=(--provider-physical-network sriov2 --provider-network-type vlan --provider-segment $vlan_id)
 
     if [[ $net_type =~ dpdk ]]; then
         printf "Create dpdk network...%s\n" "$name"
@@ -428,11 +437,11 @@ create_network() {
 prepare_for_ocp_worker() {
     TAG=$(get_tag)
 
-    create_network "radio_uplink" "$TAG" "192.0.2.0/24" "sriov"
-    create_network "radio_downlink" "$TAG" "192.0.3.0/24" "sriov"
+    create_network "radio_uplink" "$TAG" "192.0.2.0/24" "$SRIOV_NW" "$VLAN_SRIOV_UP"
+    create_network "radio_downlink" "$TAG" "192.0.3.0/24" "$SRIOV_NW" "$VLAN_SRIOV_DN"
 
-    create_network "uplink1" "$TAG" "192.0.10.0/24" "dpdk"
-    create_network "uplink2" "$TAG" "192.0.11.0/24" "dpdk"
+    #create_network "uplink1" "$TAG" "192.0.10.0/24" "dpdk"
+    #create_network "uplink2" "$TAG" "192.0.11.0/24" "dpdk"
 }
 
 create_ocp_sriov_port() {
@@ -530,8 +539,8 @@ create_ocp_worker_net() {
     # Get the DPDK network uuid
     #
 
-    DPDK_ID=$(openstack network show uplink1 -c id -f value) || exit 1
-    DPDK2_ID=$(openstack network show uplink2 -c id -f value) || exit 1
+    #DPDK_ID=$(openstack network show uplink1 -c id -f value) || exit 1
+    #DPDK2_ID=$(openstack network show uplink2 -c id -f value) || exit 1
 
     printf "Launch Worker VM...\n"
     openstack server show "worker-$worker_id.$cluster_name.$cluster_domain" 2>/dev/null || (
@@ -546,6 +555,8 @@ create_ocp_worker_net() {
         export OS_PASSWORD
 
         if [[ "$NOVA_BOOT" =~ true ]]; then
+            echo "KRS: why nova boot?"
+	    exit 1
             nova boot --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
                 --nic port-id="$SDN_ID",tag=sdn --nic port-id="$SRIOV_UPLINK_ID1",tag=uplink --nic port-id="$SRIOV_UPLINK_ID2",tag=uplink --nic port-id="$SRIOV_DOWNLINK_ID1",tag=downlink --nic port-id="$SRIOV_DOWNLINK_ID2",tag=downlink --nic net-id="$DPDK_ID",tag=dpdk1 --nic net-id="$DPDK2_ID",tag=dpdk2 --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
         else
@@ -553,8 +564,8 @@ create_ocp_worker_net() {
                 --nic port-id="$SDN_ID" \
                 --nic port-id="$SRIOV_UPLINK_ID1" --nic port-id="$SRIOV_UPLINK_ID2" \
                 --nic port-id="$SRIOV_DOWNLINK_ID1" --nic port-id="$SRIOV_DOWNLINK_ID2" \
-                --nic net-id="$DPDK_ID" --nic net-id="$DPDK2_ID" \
                 --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+                #--nic net-id="$DPDK_ID" --nic net-id="$DPDK2_ID" \
         fi
 
         # maps to
@@ -718,8 +729,8 @@ deploy() {
             usage
         fi
         prepare_for_ocp_worker
-        deploy_workers "${args[1]}"
-#        create_ocp_worker_net "${args[1]}"
+        #deploy_workers "${args[1]}"
+        create_ocp_worker_net "${args[1]}"
         ;;
     *)
         printf "Unknown deploy sub command %s!\n" "$command"
@@ -770,7 +781,7 @@ destroy() {
 label_nodes() {
     local l="$1"
 
-    workers=$(oc get nodes -ojson | jq -r '.items[].metadata.labels."kubernetes.io/hostname"' | grep worker)
+    workers=$(oc get nodes -ojson | jq -r '.items[].metadata.name' | grep worker)
 
     for w in $workers; do
         echo oc label node "$w" "$l"
@@ -788,7 +799,7 @@ deploy_workers() {
 
     image=$(openstack image list -c Name -f value)
 
-    ansible-playbook -i inventory.yaml --extra-vars "os_image_rhcos=${image}" compute-nodes.yaml
+    ansible-playbook -vv -i inventory.yaml --extra-vars "os_image_rhcos=${image}" compute-nodes.yaml
 }
 
 deploy_operator() {

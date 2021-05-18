@@ -1,0 +1,5 @@
+#!/bin/bash
+
+alias ocp="oc -n openshift-performance-addon-operator"
+alias ocs="oc -n openshift-sriov-network-operator"
+alias oct="oc -n example-cnf"

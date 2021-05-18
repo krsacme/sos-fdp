@@ -15,7 +15,7 @@ spec:
       }
     }
   linkState: auto
-  networkNamespace: nfv
+  networkNamespace: example-cnf
   resourceName: intelnics_radio_downlink
   spoofChk: 'off'
   trust: 'on'

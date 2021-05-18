@@ -1,3 +1,5 @@
 build
 build-artifacts
 secure.yaml
+*.log
+*sync.sh

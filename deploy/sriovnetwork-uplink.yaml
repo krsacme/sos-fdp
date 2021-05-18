@@ -8,7 +8,7 @@ spec:
     {
     }
   linkState: auto
-  networkNamespace: nfv
+  networkNamespace: example-cnf
   resourceName: intelnics_radio_uplink
   spoofChk: 'off'
   trust: 'on'
