@@ -1,42 +1,24 @@
-# sos-fdp
+# OpenShift Clients
 
-This repository contains files related to a PoC enabling Fast-Datapath with Kubernetes on OpenStack.
-There are several parts to the PoC:
+The OpenShift client `oc` simplifies working with Kubernetes and OpenShift
+clusters, offering a number of advantages over `kubectl` such as easy login,
+kube config file management, and access to developer tools. The `kubectl`
+binary is included alongside for when strict Kubernetes compliance is necessary.
 
-  1. Deploy a base k8s cluster with no workers on OpenStack
-  1. Deploy workers into the cluster (using UPI)
-  1. Deploy the Performance-Add-On operator to enable tuning and hugepage support
-  1. Create a MachineConfig Object to configure the vfio driver
-  1. Deploy the modified sriov-network-operator
+To learn more about OpenShift, visit [docs.openshift.com](https://docs.openshift.com)
+and select the version of OpenShift you are using.
 
-## Deploy the base cluster
+## Installing the tools
 
-  1. ./fdp.sh deploy cluster
+After extracting this archive, move the `oc` and `kubectl` binaries
+to a location on your PATH such as `/usr/local/bin`. Then run:
 
-## Deploy the workers
+    oc login [API_URL]
 
-  1. ./fdp.sh deploy workers 0
-  1. ./fdp.sh csr -- Wait for two approvals
-  1. ./fdp.sh deploy workers 1 
-  1. ./fdp.sh csr -- Wait for two approvals
-  1. etc...
+to start a session against an OpenShift cluster. After login, run `oc` and
+`oc help` to learn more about how to get started with OpenShift.
 
-## Deploy SriovNetworkOperator
+## License
 
-**Only necessary when building the SiovNetwork Operator locally**
-
-To deploy the PoC sriov-network-operator
-
-- kubectl apply -f deploy/namespace.yaml
-- kubectl apply -f deploy/sriov-network-operator.v4.6.0.clusterserviceversion.yaml
-
-To create node policies for the attached interfaces
-
-- kubectl apply -f deploy/nodepolicy-radio-downlink.yaml
-- kubectl apply -f deploy/nodepolicy-radio-uplink.yaml
-  
-The deploy directory contains the following files:
-
-- namespace.yaml -- Create a test namespace for PoC
-- nodepolicy-radio-downlink -- Create an SriovNetworkNodePolicy for the radio downlink interface
-- nodepolicy-radio-uplink -- Create an SriovNetworkNodePolicy for the radio uplink interface
+OpenShift is licensed under the Apache Public License 2.0. The source code for this
+program is [located on github](https://github.com/openshift/origin).

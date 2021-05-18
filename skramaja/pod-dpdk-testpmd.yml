@@ -2,24 +2,29 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pod-testpmd
-  namespace: example-cnf
+  
   annotations:
-    k8s.v1.cni.cncf.io/networks: vhostuser1
+    k8s.v1.cni.cncf.io/networks: sriov-downlink
+
 spec:
+  nodeSelector:
+    kubernetes.io/hostname: fdp-4qwzb-worker-0
+  # hostNetwork: true
+  # hostPID: true
+  # hostIPC: true
   containers:
   - name: samplepod
     command: ["sleep", "99999"]
     image:  quay.io/aasmith/testpmd:latest
+#    image: dockerfranck/testpmd
     securityContext:
       privileged: true
     resources:
       requests:
-        openshift.io/intelnics_vhost1: "1"
         memory: 1000Mi
         hugepages-1Gi: 3Gi
         cpu: '1'
       limits:
-        openshift.io/intelnics_vhost1: "1"
         hugepages-1Gi: 3Gi
         cpu: '1'
         memory: 1000Mi

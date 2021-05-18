@@ -1,0 +1,62 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  labels:
+    machine.openshift.io/cluster-api-cluster: fdp-2mh2r
+    machine.openshift.io/cluster-api-machine-role: worker-2
+    machine.openshift.io/cluster-api-machine-type: worker-2
+  name: fdp-2mh2r-worker-2
+  namespace: openshift-machine-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: fdp-2mh2r
+      machine.openshift.io/cluster-api-machineset: fdp-2mh2r-worker-2
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: fdp-2mh2r
+        machine.openshift.io/cluster-api-machine-role: worker-2
+        machine.openshift.io/cluster-api-machine-type: worker-2
+        machine.openshift.io/cluster-api-machineset: fdp-2mh2r-worker-2
+    spec:
+      metadata: {}
+      providerSpec:
+        value:
+          apiVersion: openstackproviderconfig.openshift.io/v1alpha1
+          cloudName: openstack
+          cloudsSecret:
+            name: openstack-cloud-credentials
+            namespace: openshift-machine-api
+          flavor: ocp-worker
+          image: fdp-2mh2r-rhcos
+          kind: OpenstackProviderSpec
+          networks:
+            - subnets:
+                - UUID: ac39ce91-3842-4e60-a6ae-5865d22b14f6
+          ports:
+            - networkID: e02cbe9f-a34d-4cbd-8087-abae76cf6d8c
+              nameSuffix: vhost1
+              fixedIPs:
+                - subnetID: c77b5b58-b7e1-4f4d-a227-8b1575ba0765
+              tags:
+                - vhost1
+              portSecurity: False
+            - networkID: af1b7574-34c7-444f-84e6-08ce8252ac7c
+              nameSuffix: vhost2
+              fixedIPs:
+                - subnetID: 547d3717-b94e-4b66-a02f-60b60b39a5dd
+              tags:
+                - vhost2
+              portSecurity: False
+          primarySubnet: ac39ce91-3842-4e60-a6ae-5865d22b14f6
+          serverMetadata:
+            Name: fdp-2mh2r-worker-2
+            openshiftClusterID: fdp-2mh2r
+          tags:
+          - openshiftClusterID=fdp-2mh2r
+          trunk: false
+          userDataSecret:
+            name: worker-user-data
+          configDrive: True

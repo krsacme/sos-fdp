@@ -1,0 +1,350 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: "2021-09-15T11:42:55Z"
+  generation: 1
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"7faac895-7b99-4a85-9f0d-17f889e4da08"}:
+            .: {}
+            f:apiVersion: {}
+            f:kind: {}
+            f:name: {}
+            f:uid: {}
+      f:spec:
+        f:progressDeadlineSeconds: {}
+        f:replicas: {}
+        f:revisionHistoryLimit: {}
+        f:selector: {}
+        f:strategy:
+          f:rollingUpdate:
+            .: {}
+            f:maxSurge: {}
+            f:maxUnavailable: {}
+          f:type: {}
+        f:template:
+          f:metadata:
+            f:labels:
+              .: {}
+              f:example-cnf-type: {}
+          f:spec:
+            f:affinity:
+              .: {}
+              f:podAntiAffinity:
+                .: {}
+                f:requiredDuringSchedulingIgnoredDuringExecution: {}
+            f:containers:
+              k:{"name":"testpmd"}:
+                .: {}
+                f:command: {}
+                f:env:
+                  .: {}
+                  k:{"name":"CR_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"NETWORK_NAME_LIST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"NODE_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:fieldRef:
+                        .: {}
+                        f:apiVersion: {}
+                        f:fieldPath: {}
+                  k:{"name":"TESTPMD_CPU_COUNT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"eth_peer"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"forwarding_cores"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"memory_channels"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"run_app"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"rx_descriptors"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"rx_queues"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"socket_mem"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"tx_descriptors"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"tx_queues"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:name: {}
+                f:resources:
+                  .: {}
+                  f:limits:
+                    .: {}
+                    f:cpu: {}
+                    f:hugepages-1Gi: {}
+                    f:memory: {}
+                    f:openshift.io/intelnics_vhost1: {}
+                  f:requests:
+                    .: {}
+                    f:cpu: {}
+                    f:hugepages-1Gi: {}
+                    f:memory: {}
+                    f:openshift.io/intelnics_vhost1: {}
+                f:securityContext:
+                  .: {}
+                  f:privileged: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+                f:volumeMounts:
+                  .: {}
+                  k:{"mountPath":"/dev/hugepages"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+                  k:{"mountPath":"/var/lib/testpmd"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+                  k:{"mountPath":"/var/lib/testpmd/run"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+                    f:subPath: {}
+                  k:{"mountPath":"/var/log/testpmd"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext: {}
+            f:serviceAccount: {}
+            f:serviceAccountName: {}
+            f:terminationGracePeriodSeconds: {}
+            f:volumes:
+              .: {}
+              k:{"name":"cnf-run"}:
+                .: {}
+                f:configMap:
+                  .: {}
+                  f:defaultMode: {}
+                  f:name: {}
+                f:name: {}
+              k:{"name":"hugepage"}:
+                .: {}
+                f:emptyDir:
+                  .: {}
+                  f:medium: {}
+                f:name: {}
+              k:{"name":"lib-dir"}:
+                .: {}
+                f:emptyDir: {}
+                f:name: {}
+              k:{"name":"log-dir"}:
+                .: {}
+                f:emptyDir: {}
+                f:name: {}
+    manager: OpenAPI-Generator
+    operation: Update
+    time: "2021-09-15T11:42:55Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:deployment.kubernetes.io/revision: {}
+      f:status:
+        f:availableReplicas: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Available"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Progressing"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+        f:updatedReplicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2021-09-15T12:22:30Z"
+  name: testpmd-app
+  namespace: example-cnf
+  ownerReferences:
+  - apiVersion: examplecnf.openshift.io/v1
+    kind: TestPMD
+    name: testpmd
+    uid: 7faac895-7b99-4a85-9f0d-17f889e4da08
+  resourceVersion: "4161668"
+  selfLink: /apis/apps/v1/namespaces/example-cnf/deployments/testpmd-app
+  uid: 4f4bf796-aaf9-46c7-b9df-1b4483ee37f6
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      example-cnf-type: cnf-app
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        example-cnf-type: cnf-app
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: example-cnf-type
+                operator: In
+                values:
+                - lb-app
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - command:
+        - /var/lib/testpmd/run
+        env:
+        - name: NETWORK_NAME_LIST
+          value: openshift.io/intelnics_vhost1
+        - name: TESTPMD_CPU_COUNT
+          value: "4"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: CR_NAME
+          value: testpmd
+        - name: eth_peer
+          value: 0,e4:43:4b:5c:96:82;1,e4:43:4b:5c:96:83;
+        - name: socket_mem
+          value: "1024"
+        - name: memory_channels
+          value: "4"
+        - name: rx_queues
+          value: "1"
+        - name: tx_queues
+          value: "1"
+        - name: rx_descriptors
+          value: "1024"
+        - name: tx_descriptors
+          value: "1024"
+        - name: forwarding_cores
+          value: "2"
+        - name: run_app
+          value: "0"
+        image: registry.redhat.io/openshift4/dpdk-base-rhel8:v4.6
+        imagePullPolicy: Always
+        name: testpmd
+        resources:
+          limits:
+            cpu: "4"
+            hugepages-1Gi: 8Gi
+            memory: 1000Mi
+            openshift.io/intelnics_vhost1: "1"
+          requests:
+            cpu: "4"
+            hugepages-1Gi: 8Gi
+            memory: 1000Mi
+            openshift.io/intelnics_vhost1: "1"
+        securityContext:
+          privileged: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /dev/hugepages
+          name: hugepage
+        - mountPath: /var/log/testpmd
+          name: log-dir
+        - mountPath: /var/lib/testpmd
+          name: lib-dir
+        - mountPath: /var/lib/testpmd/run
+          name: cnf-run
+          subPath: run
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: testpmd-operator-controller-manager
+      serviceAccountName: testpmd-operator-controller-manager
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir:
+          medium: HugePages
+        name: hugepage
+      - emptyDir: {}
+        name: log-dir
+      - emptyDir: {}
+        name: lib-dir
+      - configMap:
+          defaultMode: 493
+          name: cnf-run
+        name: cnf-run
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2021-09-15T11:42:55Z"
+    lastUpdateTime: "2021-09-15T11:43:02Z"
+    message: ReplicaSet "testpmd-app-7bf8c64799" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  - lastTransitionTime: "2021-09-15T12:22:30Z"
+    lastUpdateTime: "2021-09-15T12:22:30Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1

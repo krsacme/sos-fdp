@@ -2,6 +2,27 @@
 
 CLOUDS_YAML=~/.config/openstack/clouds.yaml
 
+SRIOV_NW_UP=${SRIOV_NW_UP:-"sriov1"}
+SRIOV_NW_DN=${SRIOV_NW_DN:-"sriov2"}
+VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"514"}
+VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"516"}
+
+DPDK_NW_1=${DPDK_NW_1:-"dpdk1"}
+DPDK_NW_2=${DPDK_NW_2:-"dpdk2"}
+VLAN_DPDK_1=${VLAN_DPDK_1:-"514"}
+VLAN_DPDK_2=${VLAN_DPDK_2:-"516"}
+CLOUDS_YAML=~/.config/openstack/clouds.yaml
+
+SRIOV_NW_UP=${SRIOV_NW_UP:-"sriov1"}
+SRIOV_NW_DN=${SRIOV_NW_DN:-"sriov2"}
+VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"514"}
+VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"516"}
+
+DPDK_NW_1=${DPDK_NW_1:-"dpdk1"}
+DPDK_NW_2=${DPDK_NW_2:-"dpdk2"}
+VLAN_DPDK_1=${VLAN_DPDK_1:-"514"}
+VLAN_DPDK_2=${VLAN_DPDK_2:-"516"}
+
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$PROJECT_DIR/templates"
 BUILD_DIR="$PROJECT_DIR/build"
@@ -250,30 +271,30 @@ prepare_openstack() {
 
     # The following section is comemented out since the install now creates these resources
     #
-    printf "Check for internal test network..."
-    openstack network show test-net >/dev/null 2>&1 || {
-        printf "creating"
-         openstack network create test-net || {
-             printf "failed!\n"
-             exit 1
-         }
-    }
-    printf "\n"
+    #printf "Check for internal test network..."
+    #openstack network show test-net >/dev/null 2>&1 || {
+    #    printf "creating"
+    #     openstack network create test-net || {
+    #         printf "failed!\n"
+    #         exit 1
+    #     }
+    #}
+    #printf "\n"
 
     # machine_cidr=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".networking.machineNetwork.cidr") || {
     #     printf "Could not access .networking.machineNetwork.cidr in %s\n" "$PROJECT_DIR/install-config.yaml"
     #     exit 1
     # }
 
-    printf "Check for internal test network subnet..."
-    openstack subnet show test-net >/dev/null 2>&1 || {
-        printf "creating...\n"
-        openstack subnet create test-net --network test-net --subnet-range "192.168.10.0/24" --dhcp || {
-            printf "failed!\n"
-            exit 1
-        }
-    }
-    printf "\n"
+    #printf "Check for internal test network subnet..."
+    #openstack subnet show test-net >/dev/null 2>&1 || {
+    #    printf "creating...\n"
+    #    openstack subnet create test-net --network test-net --subnet-range "192.168.10.0/24" --dhcp || {
+    #        printf "failed!\n"
+    #        exit 1
+    #    }
+    #}
+    #printf "\n"
 
     # if ! MACHINES_SUBNET=$(openstack subnet show ocp -c id -f value); then
     #     printf "OCP Subnet missing!"
@@ -301,14 +322,14 @@ prepare_openstack() {
         }
     }
 
-    (openstack router show public | grep -q -e '.*interfaces_info.*|.*port_id' >/dev/null 2>&1) || {
-         printf "Add internal test-net network to external router..."
-         openstack router add subnet public test-net || {
-             printf "failed!...\n"
-             exit 1
-         }
-         printf "\n"
-     }
+    #(openstack router show public | grep -q -e '.*interfaces_info.*|.*port_id' >/dev/null 2>&1) || {
+    #     printf "Add internal test-net network to external router..."
+    #     openstack router add subnet public test-net || {
+    #         printf "failed!...\n"
+    #         exit 1
+    #     }
+    #     printf "\n"
+    # }
 
     masterFlavor=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.computeFlavor") || {
         printf "Could not access .platform.openstack.computeFlavor\n"
@@ -337,10 +358,10 @@ prepare_openstack() {
     openstack quota set --cores 80 "$DEPLOY_PROJECT" || exit
     openstack quota set --ram 200000 "$DEPLOY_PROJECT" || exit
 
-    apiFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiFloatingIP") || {
-        printf "Could not access .platform.openstack.apiFloatingIP\n"
-        exit 1
-    }
+   # apiFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiFloatingIP") || {
+   #     printf "Could not access .platform.openstack.apiFloatingIP\n"
+   #     exit 1
+   # }
 
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
@@ -450,7 +471,7 @@ create_network() {
             }
     }
     if [ -n "$tag" ]; then
-       openstack subnet set --tag "$TAG" "$name" || exit 1
+       openstack subnet set --tag "$TAG" "$subnet_name" || exit 1
     fi
  }
 
@@ -572,14 +593,14 @@ create_ocp_worker_net() {
 
     printf "Launch Worker VM...\n"
     openstack server show "worker-$worker_id.$cluster_name.$cluster_domain" 2>/dev/null || (
-        OS_USERNAME=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.openstack.auth.username") || exit 1
+        OS_USERNAME=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.overcloud.auth.username") || exit 1
         export OS_USERNAME
-        OS_PROJECT_NAME=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.openstack.auth.project_name") || exit 1
+        OS_PROJECT_NAME=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.overcloud.auth.project_name") || exit 1
         export OS_PROJECT_NAME
         export OS_AUTH_TYPE="password"
-        OS_AUTH_URL=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.openstack.auth.auth_url") || exit 1
+        OS_AUTH_URL=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.overcloud.auth.auth_url") || exit 1
         export OS_AUTH_URL
-        OS_PASSWORD=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.openstack.auth.password") || exit 1
+        OS_PASSWORD=$(get_value_by_tag "$CLOUDS_YAML" ".clouds.overcloud.auth.password") || exit 1
         export OS_PASSWORD
 
         if [[ "$NOVA_BOOT" =~ true ]]; then
@@ -637,7 +658,7 @@ create_deploy() {
 
     #     printf "Generate %s...\n" "$BUILD_DIR/clouds.yaml"
 
-    #     if ! yq -y ".clouds.openstack.auth += {\"project_id\" : \"$PROJECT_ID\" }" clouds.yaml >"$BUILD_DIR/clouds.yaml"; then
+    #     if ! yq -y ".clouds.overcloud.auth += {\"project_id\" : \"$PROJECT_ID\" }" clouds.yaml >"$BUILD_DIR/clouds.yaml"; then
     #         printf "Error generating %s" "$BUILD_DIR/clouds.yaml"
     #     fi
     # fi

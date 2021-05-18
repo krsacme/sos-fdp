@@ -1,0 +1,27 @@
+apiVersion: examplecnf.openshift.io/v1
+kind: TestPMD
+metadata:
+  name: testpmd
+  namespace: example-cnf
+  resourceVersion: "2363214"
+spec:
+  cpu: 4
+  cpus: 4
+  environments:
+    forwardingCores: 2
+    runApp: 0
+  ethpeerMaclist:
+  - e4:43:4b:5c:96:82
+  - e4:43:4b:5c:96:83
+  forwardingCores: 2
+  hugepage_1gb_count: 8Gi
+  image_testpmd: registry.redhat.io/openshift4/dpdk-base-rhel8:v4.6
+  imagePullPolicy: Always
+  networks: []
+  privileged: true
+  networks:
+  - count: 1
+    name: vhostuser1
+  size: 1
+  skipAnnot: true
+  terminationGracePeriodSeconds: 30

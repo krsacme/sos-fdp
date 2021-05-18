@@ -1,0 +1,14 @@
+  additionalNetworks: 
+  - name: vhost1
+    namespace: example-cnf
+    type: Raw
+    rawCNIConfig: '{
+      "cniVersion": "0.3.1",
+      "name": "vhost1",
+      "type": "host-device",
+      "pciBusId": "0000:00:04.0",
+      "ipam": {
+        "type": "whereabouts",
+        "range": "192.0.2.192/27"
+      }
+    }'

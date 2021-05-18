@@ -16,3 +16,4 @@ spec:
         filesystem: root
         mode: ${mode}
         path: ${path}
+  osImageURL: ""

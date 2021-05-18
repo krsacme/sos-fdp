@@ -1,7 +1,7 @@
 apiVersion: performance.openshift.io/v1
 kind: PerformanceProfile
 metadata:
-  name: sriov-performanceprofile
+  name: cnf-worker
 spec:
   additionalKernelArgs:
     - nmi_watchdog=0
@@ -11,12 +11,12 @@ spec:
     - idle=poll
     - intel_idle.max_cstate=0
   cpu:
-    isolated: 2-3
+    isolated: 2-7
     reserved: 0-1
   hugepages:
     defaultHugepagesSize: 1G
     pages:
-      - count: 8
+      - count: 6
         node: 0
         size: 1G
   nodeSelector:
