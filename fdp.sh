@@ -25,7 +25,7 @@ INGRESS_FIP=${INGRESS_FIP:-"192.168.122.151"}
 WORKER_FLAVOR="ocp-worker"
 
 declare -a install_manifests=(
-    "${PROJECT_DIR}/deploy/20-mount-config.yaml" 
+    "${PROJECT_DIR}/deploy/20-mount-config.yaml"
     "${PROJECT_DIR}/deploy/99-vfio-noiommu.yaml"
     "${PROJECT_DIR}/deploy/prom_ret.yaml")
 
@@ -42,15 +42,15 @@ usage() {
     Deploy/Destroy/Update an OpenShift on OpenStack cluster
     Usage:
         $prog [-h] [-d] [-v] [-m manfifest_dir]  deploy|destroy
-            deploy [cluster|workers index]   -- Deploy cluster or worker nodes.  Run for initial deploy. 
+            deploy [cluster|workers index]   -- Deploy cluster or worker nodes.  Run for initial deploy.
             destroy [cluster|workers [index]]  -- Destroy workers or all nodes in the cluster. (destroy cluster first destroys worker nodes)
             prep-osp  -- Create all resources needed to deploy (called by deploy cluster as well)
             patch-ocp -- After a successful deployment, scale to one node
             prep-ocp  -- Get OCP ready for adding worker nodes (also called by deploy workers index)
             label-nodes -- Label worker nodes for sriov
-            deploy-operator sriov-operator-repo-dir -- Deploy the sriov operator 
+            deploy-operator sriov-operator-repo-dir -- Deploy the sriov operator
             pull-secret namespace -- Create a pull secret for quay.io
-            
+
     Options
             You really have no other options :)
             -h  -- Print this usage and exit.
@@ -186,13 +186,13 @@ deploy_cluster() {
     #
     cd "$BUILD_DIR" || return 1
 
-    printf "Generate manifests...\n" 
+    printf "Generate manifests...\n"
     if ! openshift-install --log-level debug create manifests ; then
         printf "%s create manifests failed!\n" "openshift-install"
         exit 1
     fi
 
-    printf "Generate chrony config...\n" 
+    printf "Generate chrony config...\n"
     # Generate MachineConfig for chrony config
     gen_chrony_mc
 
@@ -201,7 +201,7 @@ deploy_cluster() {
         cp "${file}" ./manifests || exit 1
     done
 
-    printf "Generate ignition files...\n" 
+    printf "Generate ignition files...\n"
     if ! openshift-install create ignition-configs --log-level debug; then
         printf "Error: failed to create ignition configs!"
         return 1
@@ -216,12 +216,12 @@ deploy_cluster() {
     trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
 
     apply_auth_hack &
-    printf "Apply bootstrap etcd hack for single master...\n" 
+    printf "Apply bootstrap etcd hack for single master...\n"
     apply_bootstrap_etcd_hack &
 
     openshift-install create cluster --log-level debug || exit 1
 
-    printf "Create ingress fip...\n" 
+    printf "Create ingress fip...\n"
     create_ingress_fip
 }
 
@@ -423,11 +423,12 @@ create_network() {
 
     openstack network set --tag "$tag" "$name" || exit 1
 
-    printf "Create network %s subnet...\n" "$name"
-    openstack subnet show "$name" >/dev/null 2>&1 || {
-        openstack subnet create "$name" --network "$name" --subnet-range "$cidr" --dhcp ||
+    subnet_name="$name_subnet"
+    printf "Create network %s subnet...\n" "$subnet_name"
+    openstack subnet show "$subnet_name" >/dev/null 2>&1 || {
+        openstack subnet create "$subnet_name" --network "$name" --subnet-range "$cidr" --dhcp ||
             {
-                printf "Error creating sriov subnet...%s" "$name"
+                printf "Error creating sriov subnet...%s" "$subnet_name"
                 exit 1
             }
     }
