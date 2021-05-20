@@ -423,16 +423,16 @@ create_network() {
 
     openstack network set --tag "$tag" "$name" || exit 1
 
-    subnet_name="$name_subnet"
-    printf "Create network %s subnet...\n" "$subnet_name"
-    openstack subnet show "$subnet_name" >/dev/null 2>&1 || {
-        openstack subnet create "$subnet_name" --network "$name" --subnet-range "$cidr" --dhcp ||
+    subnet_name="${name}_subnet"
+    printf "Create network %s subnet...\n" "${subnet_name}"
+    openstack subnet show "${subnet_name}" >/dev/null 2>&1 || {
+        openstack subnet create "${subnet_name}" --network "$name" --subnet-range "$cidr" --dhcp ||
             {
-                printf "Error creating sriov subnet...%s" "$subnet_name"
+                printf "Error creating sriov subnet...%s" "${subnet_name}"
                 exit 1
             }
     }
-    openstack subnet set --tag "$TAG" "$name" || exit 1
+    openstack subnet set --tag "$TAG" "${subnet_name}" || exit 1
 }
 
 prepare_for_ocp_worker() {
