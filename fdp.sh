@@ -242,8 +242,8 @@ prepare_openstack() {
     }
 
     printf "Create external network subnet...\n"
-    openstack subnet show public >/dev/null 2>&1 || {
-        openstack subnet create --no-dhcp --allocation-pool start=192.168.122.125,end=192.168.122.200 --gateway 192.168.122.1 --subnet-range 192.168.122.0/24 --network public public || {
+    openstack subnet show public_subnet >/dev/null 2>&1 || {
+        openstack subnet create --no-dhcp --allocation-pool start=192.168.122.125,end=192.168.122.200 --gateway 192.168.122.1 --subnet-range 192.168.122.0/24 --network public public_subnet || {
             printf "Failed to create external network subnet\n"
             exit 1
         }
