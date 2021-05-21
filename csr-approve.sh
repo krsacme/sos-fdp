@@ -9,7 +9,7 @@ if [ -z ${WORKERS} ]; then
 fi
 
 while true; do
-  READY_NODES=$(oc get nodes --selector node-role.kubernetes.io/worker="" -o json | jq -r '.items[] | select(.status.conditions[] | select(.type=="Ready" and .status=="True")) | .metadata.name' | wc -l)
+  READY_NODES=$(oc get nodes --selector node-role.kubernetes.io/worker= --selector node-role.kubernetes.io/master!= -o json | jq -r '.items[] | select(.status.conditions[] | select(.type=="Ready" and .status=="True")) | .metadata.name' | wc -l)
   if [[ "${WORKERS}" == "${READY_NODES}" ]]; then
     exit 0
   fi
