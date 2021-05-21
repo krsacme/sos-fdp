@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SRIOV_NW_UP=${SRIOV_NW_UP:-"sriov2"}
+SRIOV_NW_UP=${SRIOV_NW_UP:-"sriov1"}
 SRIOV_NW_DN=${SRIOV_NW_DN:-"sriov2"}
 VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"508"}
 VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"509"}
@@ -402,9 +402,10 @@ create_network() {
     local tag="$2"
     local cidr="$3"
     local net_type="$4"
-    local vlan_id="$5"
+    local phys_net="$5"
+    local vlan_id="$6"
 
-    params=(--provider-physical-network sriov2 --provider-network-type vlan --provider-segment $vlan_id)
+    params=(--provider-physical-network $phys_net --provider-network-type vlan --provider-segment $vlan_id)
 
     if [[ $net_type =~ dpdk ]]; then
         printf "Create dpdk network...%s\n" "$name"
@@ -438,8 +439,8 @@ create_network() {
 prepare_for_ocp_worker() {
     TAG=$(get_tag)
 
-    create_network "radio_uplink" "$TAG" "192.0.2.0/24" "$SRIOV_NW" "$VLAN_SRIOV_UP"
-    create_network "radio_downlink" "$TAG" "192.0.3.0/24" "$SRIOV_NW" "$VLAN_SRIOV_DN"
+    create_network "radio_uplink" "$TAG" "192.0.2.0/24" "sriov" "$SRIOV_NW_UP" "$VLAN_SRIOV_UP"
+    create_network "radio_downlink" "$TAG" "192.0.3.0/24" "sriov" "$SRIOV_NW_DN" "$VLAN_SRIOV_DN"
 
     #create_network "uplink1" "$TAG" "192.0.10.0/24" "dpdk"
     #create_network "uplink2" "$TAG" "192.0.11.0/24" "dpdk"
