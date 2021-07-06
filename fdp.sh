@@ -309,7 +309,7 @@ prepare_openstack() {
 
     printf "Create ocp flavor %s...\n" "$masterFlavor"
     openstack flavor show "$masterFlavor" >/dev/null 2>&1 || {
-        openstack flavor create --ram 12288 --disk 25 --vcpus 6 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$masterFlavor" || {
+        openstack flavor create --ram 12288 --disk 25 --vcpus 6 --property hw:cpu_policy=dedicated --property hw:emulator_threads_policy=share --property hw:mem_page_size=1GB "$masterFlavor" || {
             printf "Failed to create ocp flavor.."
             exit 1
         }
@@ -317,7 +317,7 @@ prepare_openstack() {
 
     printf "Create ocp flavor %s...\n" "$WORKER_FLAVOR"
     openstack flavor show "$WORKER_FLAVOR" >/dev/null 2>&1 || {
-        openstack flavor create --ram 20480 --disk 25 --vcpus 12 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$WORKER_FLAVOR" || {
+        openstack flavor create --ram 20480 --disk 25 --vcpus 12 --property hw:cpu_policy=dedicated --property hw:emulator_threads_policy=share --property hw:mem_page_size=1GB "$WORKER_FLAVOR" || {
             printf "Failed to create ocp flavor.."
             exit 1
         }
