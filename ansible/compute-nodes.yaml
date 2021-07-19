@@ -62,7 +62,7 @@
     shell: >
       nova boot --image "{{ $infraID }}-rhcos"
         --flavor "{{ os_flavor_worker }}"
-        --user-data $PROJECT_DIR/build-artifacts/worker.ign
+        --user-data "{{ os_user_data }}"
         --nic port-id=$SDN_ID,tag=sdn
         --nic port-id=$SRIOV_UPLINK_ID1,tag=uplink 
         --nic port-id=$SRIOV_UPLINK_ID2,tag=uplink
