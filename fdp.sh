@@ -22,7 +22,7 @@ INGRESS_FIP=${INGRESS_FIP:-"192.168.122.151"}
 WORKER_FLAVOR="ocp-worker"
 
 declare -a install_manifests=(
-    "${PROJECT_DIR}/deploy/20-mount-config.yaml" 
+    "${PROJECT_DIR}/deploy/20-mount-config.yaml"
     "${PROJECT_DIR}/deploy/99-vfio-noiommu.yaml"
     "${PROJECT_DIR}/deploy/prom_ret.yaml")
 
@@ -41,16 +41,17 @@ usage() {
         $prog [-h] [-d] [-v] [-m manfifest_dir]  deploy|destroy
             deploy cluster   -- Deploy cluster.  Runs the following steps
                                 create_deploy, prepare_openstack, manage_cluster "deploy"
-            create-deploy    -- create $BUILD_DIR director and populate 
+            create-deploy    -- create $BUILD_DIR director and populate
             deploy workers path_to_UPI_project   -- Deploy worker nodes using UPI.  Must provide path to UPI Ansible
+            deploy [cluster|workers index]   -- Deploy cluster or worker nodes.  Run for initial deploy.
             destroy [cluster|workers [index]]  -- Destroy workers or all nodes in the cluster. (destroy cluster first destroys worker nodes)
             prep-osp  -- Create all resources needed to deploy (called by deploy cluster as well)
             patch-ocp -- After a successful deployment, scale to one node
             prep-ocp  -- Get OCP ready for adding worker nodes (also called by deploy workers index)
             label-nodes -- Label worker nodes for sriov
-            deploy-operator sriov-operator-repo-dir -- Deploy the sriov operator 
+            deploy-operator sriov-operator-repo-dir -- Deploy the sriov operator
             pull-secret namespace -- Create a pull secret for quay.io
-            
+
     Options
             You really have no other options :)
             -h  -- Print this usage and exit.
@@ -185,13 +186,13 @@ deploy_cluster() {
     #
     cd "$BUILD_DIR" || return 1
 
-    printf "Generate manifests...\n" 
+    printf "Generate manifests...\n"
     if ! openshift-install --log-level debug create manifests >/dev/null; then
         printf "%s create manifests failed!\n" "openshift-install"
         exit 1
     fi
 
-    printf "Generate chrony config...\n" 
+    printf "Generate chrony config...\n"
     # Generate MachineConfig for chrony config
     gen_chrony_mc
 
@@ -200,7 +201,7 @@ deploy_cluster() {
         cp "${file}" ./manifests || exit 1
     done
 
-    printf "Generate ignition files...\n" 
+    printf "Generate ignition files...\n"
     if ! openshift-install create ignition-configs --log-level debug; then
         printf "Error: failed to create ignition configs!"
         return 1
@@ -212,12 +213,14 @@ deploy_cluster() {
     cp ./*.ign "$ARTIFACTS_DIR" || return 1
     cp metadata.json "$ARTIFACTS_DIR" || return 1
 
-    printf "Skip auth_hack for single master...\n" 
-    #apply_auth_hack &
-    printf "Skip bootstrap etcd hack for single master...\n" 
-    #apply_bootstrap_etcd_hack &
+    apply_auth_hack &
+    printf "Apply bootstrap etcd hack for single master...\n"
+    apply_bootstrap_etcd_hack &
 
     openshift-install create cluster --log-level debug || exit 1
+
+    printf "Create ingress fip...\n"
+    create_ingress_fip
 }
 
 #
@@ -327,9 +330,8 @@ prepare_openstack() {
 
     printf "Check for ocp worker flavor %s..." "$WORKER_FLAVOR"
     openstack flavor show "$WORKER_FLAVOR" >/dev/null 2>&1 || {
-        printf "create..."
-        openstack flavor create --ram 16384 --disk 25 --vcpus 8 --property hw:cpu_policy=dedicated --property hw:mem_page_size=1GB "$WORKER_FLAVOR" || {
-            printf "failed!..\n"
+        openstack flavor create --ram 8192 --disk 25 --vcpus 6 --property hw:cpu_policy=dedicated --property hw:emulator_threads_policy=share --property hw:mem_page_size=1GB "$WORKER_FLAVOR" || {
+            printf "Failed to create ocp flavor.."
             exit 1
         }
     }
@@ -346,17 +348,15 @@ prepare_openstack() {
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
 
-    printf "Check API %s.%s floating ip on %s..." "$cluster_name" "$cluster_domain" "$apiFloatingIP"
-    (openstack floating ip list | grep -q "$apiFloatingIP" >/dev/null 2>&1) || {
+    printf "Check API %s.%s floating ip on %s..." "$cluster_name" "$cluster_domain" "$lbFloatingIP"
+    (openstack floating ip list | grep -q "$lbFloatingIP" >/dev/null 2>&1) || {
         printf "create..."
-        openstack floating ip create --floating-ip-address "$apiFloatingIP" --description "Ingress $cluster_name.$cluster_domain" public || {
+        openstack floating ip create --floating-ip-address "$lbFloatingIP" --description "API $cluster_name.$cluster_domain" public || {
             printf "failed!\n"
             exit 1
         }
     }
     printf "\n"
-
-    create_ingress_fip
 }
 
 patch_ocp() {
@@ -455,9 +455,9 @@ create_network() {
     fi
  }
 
-test_sriov() {    
+test_sriov() {
     create_network "sriov-net" "" "192.0.20.0/24" "sriov"
-    
+
     SRIOV_UPLINK_ID1=$(create_ocp_sriov_port "0" "" "infra" "sriov-net" "1")
 
     openstack server create --image "cirros" --flavor "ocp-worker" --net test-net --nic port-id="$SRIOV_UPLINK_ID1" "test-sriov"
