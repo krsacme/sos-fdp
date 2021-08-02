@@ -2,8 +2,13 @@
 
 SRIOV_NW_UP=${SRIOV_NW_UP:-"sriov1"}
 SRIOV_NW_DN=${SRIOV_NW_DN:-"sriov2"}
-VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"508"}
-VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"509"}
+VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"506"}
+VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"507"}
+
+DPDK_NW_1=${DPDK_NW_1:-"dpdk1"}
+DPDK_NW_2=${DPDK_NW_2:-"dpdk2"}
+VLAN_DPDK_1=${VLAN_DPDK_1:-"508"}
+VLAN_DPDK_2=${VLAN_DPDK_2:-"509"}
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$PROJECT_DIR/templates"
@@ -409,7 +414,6 @@ create_network() {
 
     if [[ $net_type =~ dpdk ]]; then
         printf "Create dpdk network...%s\n" "$name"
-        params=()
     else
         printf "Create sriov network...%s\n" "$name"
     fi
@@ -442,39 +446,44 @@ prepare_for_ocp_worker() {
     create_network "radio_uplink" "$TAG" "192.0.2.0/24" "sriov" "$SRIOV_NW_UP" "$VLAN_SRIOV_UP"
     create_network "radio_downlink" "$TAG" "192.0.3.0/24" "sriov" "$SRIOV_NW_DN" "$VLAN_SRIOV_DN"
 
-    #create_network "uplink1" "$TAG" "192.0.10.0/24" "dpdk"
-    #create_network "uplink2" "$TAG" "192.0.11.0/24" "dpdk"
+    local ovsdpdk=$(source ~/stackrc && tripleo-ansible-inventory --list | jq .overcloud_neutron_ovs_dpdk_agent.children | jq length)
+    if [[ "$ovsdpdk" -gt 0 ]]; then
+        create_network "vhostuser1" "$TAG" "192.0.10.0/24" "dpdk" "$DPDK_NW_1" "$VLAN_DPDK_1"
+        create_network "vhostuser2" "$TAG" "192.0.11.0/24" "dpdk" "$DPDK_NW_2" "$VLAN_DPDK_2"
+    fi
 }
 
-create_ocp_sriov_port() {
-    local worker_id="$1"
-    local tag="$2"
-    local infraID="$3"
-    local network="$4"
-    local instance="$5"
-
-    #
-    # Create an SRIOV port for the worker
-    #
+create_ocp_port() {
+    local nwtype="$1"
+    local worker_id="$2"
+    local tag="$3"
+    local infraID="$4"
+    local network="$5"
+    local instance="$6"
 
     port_name="$infraID-worker-$worker_id-$network-$instance"
+    addons=""
+    if [[ "$nwtype" == "sriov" ]]; then
+        addons="--vnic-type direct --disable-port-security --binding-profile trusted=true"
+    fi
 
     openstack port show "$port_name" -c id -f value >/dev/null 2>&1 || (
-        openstack port create "$port_name" --vnic-type direct --network "$network" \
-            --tag "$tag" --tag "$network" \
-            --disable-port-security --binding-profile trusted=true >/dev/null ||
+        openstack port create "$port_name" $addons --network "$network" \
+            --tag "$tag" --tag "$network" >/dev/null ||
             (
                 printf "Error creating %s!\n" "$port_name"
                 exit 1
             )
     )
-    SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
+    PORT_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
 
-    echo "$SRIOV_ID"
+    echo "$PORT_ID"
 }
 
 create_ocp_worker_net() {
     local worker_id="$1"
+    local ovsdpdk=$(source ~/stackrc && tripleo-ansible-inventory --list | jq .overcloud_neutron_ovs_dpdk_agent.children | jq length)
+    set +x
 
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
@@ -529,20 +538,28 @@ create_ocp_worker_net() {
     # )
     # SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
     printf "Create %s...\n" "sriov uplink port 1"
-    SRIOV_UPLINK_ID1=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_uplink" "1")
+    SRIOV_UPLINK_ID1=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_uplink" "1")
     printf "Create %s...\n" "sriov uplink port 2"
-    SRIOV_UPLINK_ID2=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_uplink" "2")
+    SRIOV_UPLINK_ID2=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_uplink" "2")
 
     printf "Create %s...\n" "sriov downlink port 1"
-    SRIOV_DOWNLINK_ID1=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_downlink" "1")
+    SRIOV_DOWNLINK_ID1=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_downlink" "1")
     printf "Create %s...\n" "sriov downlink port 2"
-    SRIOV_DOWNLINK_ID2=$(create_ocp_sriov_port "$worker_id" "$TAG" "$infraID" "radio_downlink" "2")
+    SRIOV_DOWNLINK_ID2=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_downlink" "2")
     #
     # Get the DPDK network uuid
     #
-
-    #DPDK_ID=$(openstack network show uplink1 -c id -f value) || exit 1
-    #DPDK2_ID=$(openstack network show uplink2 -c id -f value) || exit 1
+    DPDK=""
+    if [[ "$ovsdpdk" -gt 0 ]]; then
+        printf "Create %s...\n" "vhostuser port 1"
+        DPDK1_ID1=$(create_ocp_port "dpdk" "$worker_id" "$TAG" "$infraID" "vhostuser1" "1")
+        printf "Create %s...\n" "vhostuser port 2"
+        DPDK2_ID1=$(create_ocp_port "dpdk" "$worker_id" "$TAG" "$infraID" "vhostuser2" "1")
+	DPDK="--nic port-id=$DPDK1_ID1 --nic port-id=$DPDK2_ID1"
+        #DPDK1_ID=$(openstack network show vhostuser1 -c id -f value) || exit 1
+        #DPDK2_ID=$(openstack network show vhostuser2 -c id -f value) || exit 1
+	#DPDK="--nic net-id=$DPDK1_ID --nic net-id=$DPDK2_ID"
+    fi
 
     printf "Launch Worker VM...\n"
     openstack server show "worker-$worker_id.$cluster_name.$cluster_domain" 2>/dev/null || (
@@ -566,8 +583,8 @@ create_ocp_worker_net() {
                 --nic port-id="$SDN_ID" \
                 --nic port-id="$SRIOV_UPLINK_ID1" --nic port-id="$SRIOV_UPLINK_ID2" \
                 --nic port-id="$SRIOV_DOWNLINK_ID1" --nic port-id="$SRIOV_DOWNLINK_ID2" \
-                --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
-                #--nic net-id="$DPDK_ID" --nic net-id="$DPDK2_ID" \
+		$DPDK --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
+                #--nic net-id="$DPDK1_ID" --nic net-id="$DPDK2_ID" \
         fi
 
         # maps to
@@ -836,6 +853,7 @@ deploy_operator() {
         --patch '{ "spec": { "enableOperatorWebhook": false } }'
 
     label_nodes feature.node.kubernetes.io/network-sriov.capable="true"
+    label_nodes feature.node.kubernetes.io/network-vhostuser.capable="true"
 
     popd || exit
 }
@@ -955,6 +973,7 @@ clean)
     ;;
 label-nodes)
     label_nodes feature.node.kubernetes.io/network-sriov.capable="true"
+    label_nodes feature.node.kubernetes.io/network-vhostuser.capable="true"
     ;;
 deploy-operator)
     if [ "$#" -lt 1 ]; then
