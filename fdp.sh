@@ -2,13 +2,13 @@
 
 SRIOV_NW_UP=${SRIOV_NW_UP:-"sriov1"}
 SRIOV_NW_DN=${SRIOV_NW_DN:-"sriov2"}
-VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"506"}
-VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"507"}
+VLAN_SRIOV_UP=${VLAN_SRIOV_UP:-"514"}
+VLAN_SRIOV_DN=${VLAN_SRIOV_DN:-"516"}
 
 DPDK_NW_1=${DPDK_NW_1:-"dpdk1"}
 DPDK_NW_2=${DPDK_NW_2:-"dpdk2"}
-VLAN_DPDK_1=${VLAN_DPDK_1:-"508"}
-VLAN_DPDK_2=${VLAN_DPDK_2:-"509"}
+VLAN_DPDK_1=${VLAN_DPDK_1:-"514"}
+VLAN_DPDK_2=${VLAN_DPDK_2:-"516"}
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATES_DIR="$PROJECT_DIR/templates"
@@ -443,8 +443,11 @@ create_network() {
 prepare_for_ocp_worker() {
     TAG=$(get_tag)
 
-    create_network "radio_uplink" "$TAG" "192.0.2.0/24" "sriov" "$SRIOV_NW_UP" "$VLAN_SRIOV_UP"
-    create_network "radio_downlink" "$TAG" "192.0.3.0/24" "sriov" "$SRIOV_NW_DN" "$VLAN_SRIOV_DN"
+    local sriov=$(source ~/stackrc && tripleo-ansible-inventory --list | jq .overcloud_ComputeSriov.hosts | jq length)
+    if [[ "$sriov" -gt 1 ]]; then
+        create_network "radio_uplink" "$TAG" "192.0.2.0/24" "sriov" "$SRIOV_NW_UP" "$VLAN_SRIOV_UP"
+        create_network "radio_downlink" "$TAG" "192.0.3.0/24" "sriov" "$SRIOV_NW_DN" "$VLAN_SRIOV_DN"
+    fi
 
     local ovsdpdk=$(source ~/stackrc && tripleo-ansible-inventory --list | jq .overcloud_neutron_ovs_dpdk_agent.children | jq length)
     if [[ "$ovsdpdk" -gt 0 ]]; then
@@ -537,15 +540,22 @@ create_ocp_worker_net() {
     #         )
     # )
     # SRIOV_ID=$(openstack port show "$port_name" -c id -f value) || exit 1
-    printf "Create %s...\n" "sriov uplink port 1"
-    SRIOV_UPLINK_ID1=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_uplink" "1")
-    printf "Create %s...\n" "sriov uplink port 2"
-    SRIOV_UPLINK_ID2=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_uplink" "2")
 
-    printf "Create %s...\n" "sriov downlink port 1"
-    SRIOV_DOWNLINK_ID1=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_downlink" "1")
-    printf "Create %s...\n" "sriov downlink port 2"
-    SRIOV_DOWNLINK_ID2=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_downlink" "2")
+    SRIOV=""
+    local sriov=$(source ~/stackrc && tripleo-ansible-inventory --list | jq .overcloud_ComputeSriov.hosts | jq length)
+    if [[ "$sriov" -gt 1 ]]; then
+        printf "Create %s...\n" "sriov uplink port 1"
+        SRIOV_UPLINK_ID1=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_uplink" "1")
+        printf "Create %s...\n" "sriov uplink port 2"
+        SRIOV_UPLINK_ID2=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_uplink" "2")
+
+        printf "Create %s...\n" "sriov downlink port 1"
+        SRIOV_DOWNLINK_ID1=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_downlink" "1")
+        printf "Create %s...\n" "sriov downlink port 2"
+        SRIOV_DOWNLINK_ID2=$(create_ocp_port "sriov" "$worker_id" "$TAG" "$infraID" "radio_downlink" "2")
+        SRIOV="--nic port-id=$SRIOV_UPLINK_ID1 --nic port-id=$SRIOV_UPLINK_ID2 --nic port-id=$SRIOV_DOWNLINK_ID1 --nic port-id=$SRIOV_DOWNLINK_ID2"
+    fi
+
     #
     # Get the DPDK network uuid
     #
@@ -581,10 +591,7 @@ create_ocp_worker_net() {
         else
             openstack server create --image "$infraID-rhcos" --flavor "$WORKER_FLAVOR" --user-data "$PROJECT_DIR/build-artifacts/worker.ign" \
                 --nic port-id="$SDN_ID" \
-                --nic port-id="$SRIOV_UPLINK_ID1" --nic port-id="$SRIOV_UPLINK_ID2" \
-                --nic port-id="$SRIOV_DOWNLINK_ID1" --nic port-id="$SRIOV_DOWNLINK_ID2" \
-		$DPDK --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
-                #--nic net-id="$DPDK1_ID" --nic net-id="$DPDK2_ID" \
+		$SRIOV $DPDK --config-drive true "worker-$worker_id.$cluster_name.$cluster_domain"
         fi
 
         # maps to

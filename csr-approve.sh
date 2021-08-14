@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 WORKERS=$1
 if [ -z ${WORKERS} ]; then
