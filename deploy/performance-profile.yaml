@@ -1,7 +1,7 @@
 apiVersion: performance.openshift.io/v1
 kind: PerformanceProfile
 metadata:
-  name: sriov-performanceprofile
+  name: cnf-performanceprofile
 spec:
   additionalKernelArgs:
     - nmi_watchdog=0
@@ -10,8 +10,10 @@ spec:
     - processor.max_cstate=1
     - idle=poll
     - intel_idle.max_cstate=0
+    - default_hugepagesz=1GB
+    - hugepagesz=1G
   cpu:
-    isolated: 2-11
+    isolated: 2-9
     reserved: 0-1
   hugepages:
     defaultHugepagesSize: 1G

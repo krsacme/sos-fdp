@@ -314,7 +314,7 @@ prepare_openstack() {
 
     printf "Create ocp flavor %s...\n" "$masterFlavor"
     openstack flavor show "$masterFlavor" >/dev/null 2>&1 || {
-        openstack flavor create --ram 12288 --disk 25 --vcpus 6 --property hw:cpu_policy=dedicated --property hw:emulator_threads_policy=share --property hw:mem_page_size=1GB "$masterFlavor" || {
+        openstack flavor create --ram 12288 --disk 25 --vcpus 4 --property hw:cpu_policy=dedicated --property hw:emulator_threads_policy=share --property hw:mem_page_size=1GB "$masterFlavor" || {
             printf "Failed to create ocp flavor.."
             exit 1
         }
@@ -410,7 +410,11 @@ create_network() {
     local phys_net="$5"
     local vlan_id="$6"
 
-    params=(--provider-physical-network $phys_net --provider-network-type vlan --provider-segment $vlan_id)
+    if [[ "$vlan_id" == "0" ]]; then
+        params=(--provider-physical-network $phys_net --provider-network-type flat)
+    else
+        params=(--provider-physical-network $phys_net --provider-network-type vlan --provider-segment $vlan_id)
+    fi
 
     if [[ $net_type =~ dpdk ]]; then
         printf "Create dpdk network...%s\n" "$name"
@@ -468,6 +472,8 @@ create_ocp_port() {
     addons=""
     if [[ "$nwtype" == "sriov" ]]; then
         addons="--vnic-type direct --disable-port-security --binding-profile trusted=true"
+    else
+        addons="--disable-port-security"
     fi
 
     openstack port show "$port_name" -c id -f value >/dev/null 2>&1 || (
