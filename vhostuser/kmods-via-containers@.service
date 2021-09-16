@@ -1,0 +1,25 @@
+[Unit]
+Description=OpenShift on OpenStack dpdk interface support - %i
+# Start after the network is up
+Wants=network-online.target
+After=network-online.target
+# Also after docker.service (no effect on systems without docker)
+After=docker.service
+# Before kubelet.service (no effect on systems without kubernetes)
+Before=kubelet.service
+# But before users are allowed to login
+Before=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=25m
+RemainAfterExit=true
+# Use bash to workaround https://github.com/coreos/rpm-ostree/issues/1936
+ExecStartPre=/usr/bin/bash -c "kmods-via-containers build %i %v"
+ExecStart=/usr/bin/bash -c "kmods-via-containers load %i %v"
+ExecReload=/usr/bin/bash -c "kmods-via-containers reload %i %v"
+ExecStop=/usr/bin/bash -c "kmods-via-containers unload %i %v"
+StandardOutput=journal+console
+
+[Install]
+WantedBy=default.target

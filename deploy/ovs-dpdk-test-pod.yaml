@@ -1,0 +1,26 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: example
+  namespace: ovs-dpdk
+  labels:
+    app: httpd
+  annotations:
+    k8s.v1.cni.cncf.io/networks: whereabouts-network-1, ovs-dpdk-network-1
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: fdp-hsb6t-worker-0 
+  restartPolicy: Always
+  serviceAccountName: default
+  containers:
+    - resources: {}
+      name: httpd
+      command:
+        - /bin/sleep
+        - 3650d
+      ports:
+        - containerPort: 8080
+          protocol: TCP
+      imagePullPolicy: IfNotPresent
+      image: registry.redhat.io/openshift4/ose-cli
+  serviceAccount: default

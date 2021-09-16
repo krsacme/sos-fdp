@@ -125,23 +125,22 @@ etcd_hack() {
 create_ingress_fip() {
     printf "Create Ingress Floating IP...\n"
 
-    ingressVIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.ingressVIP")
+    ingressFIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.ingressFloatingIP")
 
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
 
-    printf "Create Ingress %s.%s floating ip...\n" "$cluster_name" "$cluster_domain"
-    openstack floating ip list | grep -q "$INGRESS_FIP" >/dev/null 2>&1 || (
-        openstack floating ip create --floating-ip-address "$INGRESS_FIP" --description "API $cluster_name.$cluster_domain" public || (
-            printf "Failed to create Ingress %s.%s floating ip...\n" "$cluster_name" "$cluster_domain"
+    printf "Create Ingress %s.%s (%s) floating ip...\n" "$cluster_name" "$cluster_domain" "$ingressFIP"
+    openstack floating ip list | grep -q "$ingressFIP" >/dev/null 2>&1 || (
+        openstack floating ip create --floating-ip-address "$ingressFIP" --description "Ingress $cluster_name.$cluster_domain" public || (
+            printf "Failed to create <Ingress %s.%s> (%s) floating ip...\n" "$cluster_name" "$cluster_domain" "$ingressFIP"
             exit 1
         )
     )
 
-    infraID=$(get_value_by_tag "$ARTIFACTS_DIR/metadata.json" ".infraID")
-
-    printf "Attach \"Ingress %s.%s\" floating ip to %s...\n" "$cluster_name" "$cluster_domain" "$infraID-ingress-port"
-    openstack floating ip set --port "$infraID-ingress-port" "$INGRESS_FIP" || exit 1
+    # infraID=$(get_value_by_tag "$ARTIFACTS_DIR/metadata.json" ".infraID")
+    # printf "Attach \"Ingress %s.%s\" floating ip to %s...\n" "$cluster_name" "$cluster_domain" "$infraID-ingress-port"
+    # openstack floating ip set --port "$infraID-ingress-port" "$INGRESS_FIP" || exit 1
 }
 
 function apply_bootstrap_etcd_hack() {
@@ -213,14 +212,12 @@ deploy_cluster() {
     cp ./*.ign "$ARTIFACTS_DIR" || return 1
     cp metadata.json "$ARTIFACTS_DIR" || return 1
 
-    apply_auth_hack &
-    printf "Apply bootstrap etcd hack for single master...\n" 
-    apply_bootstrap_etcd_hack &
+    printf "Skip auth_hack for single master...\n" 
+    #apply_auth_hack &
+    printf "Skip bootstrap etcd hack for single master...\n" 
+    #apply_bootstrap_etcd_hack &
 
     openshift-install create cluster --log-level debug || exit 1
-
-    printf "Create ingress fip...\n" 
-    create_ingress_fip
 }
 
 #
@@ -341,7 +338,7 @@ prepare_openstack() {
     openstack quota set --cores 80 "$DEPLOY_PROJECT" || exit
     openstack quota set --ram 200000 "$DEPLOY_PROJECT" || exit
 
-    lbFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiFloatingIP") || {
+    apiFloatingIP=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".platform.openstack.apiFloatingIP") || {
         printf "Could not access .platform.openstack.apiFloatingIP\n"
         exit 1
     }
@@ -349,15 +346,17 @@ prepare_openstack() {
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
 
-    printf "Check API %s.%s floating ip on %s..." "$cluster_name" "$cluster_domain" "$lbFloatingIP"
-    (openstack floating ip list | grep -q "$lbFloatingIP" >/dev/null 2>&1) || {
+    printf "Check API %s.%s floating ip on %s..." "$cluster_name" "$cluster_domain" "$apiFloatingIP"
+    (openstack floating ip list | grep -q "$apiFloatingIP" >/dev/null 2>&1) || {
         printf "create..."
-        openstack floating ip create --floating-ip-address "$lbFloatingIP" --description "API $cluster_name.$cluster_domain" public || {
+        openstack floating ip create --floating-ip-address "$apiFloatingIP" --description "Ingress $cluster_name.$cluster_domain" public || {
             printf "failed!\n"
             exit 1
         }
     }
     printf "\n"
+
+    create_ingress_fip
 }
 
 patch_ocp() {
@@ -807,9 +806,9 @@ deploy_workers() {
     cp "$PROJECT_DIR/build-artifacts/metadata.json" . || exit 1
     cp "$PROJECT_DIR/build-artifacts/worker.ign" . || exit 1
 
-    image=$(openstack image list -c Name -f value)
+    image=$(openstack image list -c Name -f value|grep rhcos)
 
-    ansible-playbook -i inventory.yaml --extra-vars "os_image_rhcos=${image}" compute-nodes.yaml
+    ansible-playbook -vvv -i inventory.yaml --extra-vars "os_image_rhcos=${image}" compute-nodes.yaml
 }
 
 deploy_operator() {
