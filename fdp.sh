@@ -218,9 +218,6 @@ deploy_cluster() {
     apply_bootstrap_etcd_hack &
 
     openshift-install create cluster --log-level debug || exit 1
-
-    printf "Create ingress fip...\n"
-    create_ingress_fip
 }
 
 #
@@ -348,15 +345,17 @@ prepare_openstack() {
     cluster_name=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".metadata.name")
     cluster_domain=$(get_value_by_tag "$PROJECT_DIR/install-config.yaml" ".baseDomain")
 
-    printf "Check API %s.%s floating ip on %s..." "$cluster_name" "$cluster_domain" "$lbFloatingIP"
-    (openstack floating ip list | grep -q "$lbFloatingIP" >/dev/null 2>&1) || {
+    printf "Check API %s.%s floating ip on %s..." "$cluster_name" "$cluster_domain" "$apiFloatingIP"
+    (openstack floating ip list | grep -q "$apiFloatingIP" >/dev/null 2>&1) || {
         printf "create..."
-        openstack floating ip create --floating-ip-address "$lbFloatingIP" --description "API $cluster_name.$cluster_domain" public || {
+        openstack floating ip create --floating-ip-address "$apiFloatingIP" --description "Ingress $cluster_name.$cluster_domain" public || {
             printf "failed!\n"
             exit 1
         }
     }
     printf "\n"
+
+    create_ingress_fip
 }
 
 patch_ocp() {
